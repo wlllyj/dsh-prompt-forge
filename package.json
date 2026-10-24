@@ -1,6 +1,6 @@
 {
   "name": "dsh-prompt-forge",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "type": "module",
   "description": "One Prompt button beside the composer: a panel rewrites the draft by an editable prompt-engineering doctrine, lists the unknowns it hides, and edits the plugin's own settings in place. Answers return as pickable rows so the user decides what replaces or extends the draft. Length and item count scale with the task; nothing is exposed to agents.",
   "license": "MIT",
@@ -8,11 +8,16 @@
     "type": "git",
     "url": "https://github.com/wlllyj/dsh-prompt-forge.git"
   },
+  "homepage": "https://github.com/wlllyj/dsh-prompt-forge#readme",
   "keywords": ["dsh", "dsh-plugin", "prompt", "prompt-engineering"],
   "engines": {
-    "node": "^22.19.0 || >=24.0.0"
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": ">=0.2.1-rc.1 <0.3.0-0"
   },
-  "dependencies": {
+  "peerDependencies": {
+    "@deepseek-ai/schemastery": "^3.18.5"
+  },
+  "devDependencies": {
     "@deepseek-ai/schemastery": "^3.18.5"
   },
   "exports": {
