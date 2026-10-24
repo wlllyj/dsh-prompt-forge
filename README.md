@@ -91,8 +91,8 @@ pnpm pack      # 生成 dsh-prompt-forge-<version>.tgz
 每次发版都会把打好包的 tgz 挂在 GitHub Release 上：
 
 ```sh
-curl -L -o dsh-prompt-forge-0.9.2.tgz \
-  https://github.com/wlllyj/dsh-prompt-forge/releases/download/v0.9.2/dsh-prompt-forge-0.9.2.tgz
+curl -L -o dsh-prompt-forge-0.9.3.tgz \
+  https://github.com/wlllyj/dsh-prompt-forge/releases/download/v0.9.3/dsh-prompt-forge-0.9.3.tgz
 ```
 
 把下载到的 `.tgz` 路径交给 `plugin_manager install_bundle`，然后刷新页面。
@@ -188,17 +188,15 @@ curl -s -X POST http://127.0.0.1:<port>/promptforge/optimize \
 
 ## 许可证
 
-当前仓库使用 **MIT**（见 [LICENSE](LICENSE)），版权人 `wlllyj`。
+本项目使用 **MIT** 许可证，全文见 [LICENSE](LICENSE)，版权人 `wlllyj`。
 
-许可证由维护者最终拍板，备选三项：
+用人话说，这意味着：
 
-| 选项 | 适合 | 代价 |
-| --- | --- | --- |
-| **MIT**（当前） | 希望任何人能自由使用/修改/再发布，包括闭源集成 | 别人可以拿走改个名字发布，你只能要求保留版权声明 |
-| **Apache-2.0** | 同类宽松，但想要专利授权条款与「修改需声明」 | 文本更长，需保留 NOTICE 文件 |
-| **AGPL-3.0** | 想强制「改了就必须开源」，即使作为网络服务提供 | 商业用户会绕开；与不少公司政策冲突 |
+- **你可以**：任意使用、修改、再发布，包括用在闭源产品或商业项目里，不需要付费，也不需要公开你的改动。
+- **你必须**：保留原版权声明和许可证文本（分发本项目的副本或修改版时把 `LICENSE` 一起带上）。
+- **不提供担保**：软件按「现状」提供，作者不对使用后果负责。
 
-> 换证只需改 `LICENSE`、`package.json` 的 `license` 字段与本 README 的这一节，不影响代码。
+选 MIT 的理由：它是插件生态里最常见、接受度最高的许可证，`dsh-market` 上架不挑许可证类型，MIT 不会给任何一方增加合规负担；如果以后想把项目并进采用 Apache-2.0 的组织，MIT 代码也可以直接吸收。
 
 ## 贡献
 
@@ -273,7 +271,7 @@ description:
   en: "Adds one Prompt button beside the composer that rewrites the draft with an editable prompt-engineering doctrine, lists the unknowns it hides, and edits the plugin's own settings in place, returning results as pickable rows instead of overwriting the draft."
   zh: "在输入框旁加一个 ✦ Prompt 按钮：按可替换的提示词心法改写草稿、列出草稿里被忽略的未知，并在面板里直接改插件设置，结果按行返回而不是直接覆盖草稿。"
 icon: https://raw.githubusercontent.com/wlllyj/dsh-prompt-forge/main/docs/icon-180.png
-tarball: https://github.com/wlllyj/dsh-prompt-forge/releases/download/v0.9.2/dsh-prompt-forge-0.9.2.tgz
+tarball: https://github.com/wlllyj/dsh-prompt-forge/releases/download/v0.9.3/dsh-prompt-forge-0.9.3.tgz
 ```
 
 **上架所需信息 → README 位置对照**
@@ -290,7 +288,7 @@ tarball: https://github.com/wlllyj/dsh-prompt-forge/releases/download/v0.9.2/dsh
 | 图标（GitHub 托管方形位图，约 96px） | ✅ `docs/icon-180.png`（由图内 `icon.svg` 渲染） | 见上方 yml 的 `icon:` |
 | 截图（1–8 张，相对路径） | ✅ `screenshots.json` 声明三张 | `docs/screenshots/` |
 | npm 发布（可选） | 未发布，改用下一条 | `package.json` 的 `repository` |
-| 预构建 tgz（可选） | ✅ GitHub Release `v0.9.2` 附带 tgz | 见上方 yml 的 `tarball:` 与「安装 · 方式 C」 |
+| 预构建 tgz（可选） | ✅ GitHub Release `v0.9.3` 附带 tgz | 见上方 yml 的 `tarball:` 与「安装 · 方式 C」 |
 | 官方包用 `peerDependencies` | ✅ | `@deepseek-ai/schemastery` 已在 `peerDependencies` + `devDependencies` |
 
 **提交流程**：fork → 把 `docs/dsh-market-entry.yml` 复制成 `data/plugins/wlllyj__dsh-prompt-forge.yml` → 提 PR（一次 PR 最多 3 条）→ CI 会依次检查 `dsh.bundle`、仓库年龄、awesome-lint 与站点构建 → 合并后市场自动同步（通常一天内）。

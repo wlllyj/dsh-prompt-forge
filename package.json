@@ -1,6 +1,6 @@
 {
   "name": "dsh-prompt-forge",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "type": "module",
   "description": "One Prompt button beside the composer: a panel rewrites the draft by an editable prompt-engineering doctrine, lists the unknowns it hides, and edits the plugin's own settings in place. Answers return as pickable rows so the user decides what replaces or extends the draft. Length and item count scale with the task; nothing is exposed to agents.",
   "license": "MIT",
