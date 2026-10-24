@@ -16,21 +16,21 @@ window.__ModuleLoader__.load({
     const ENDPOINT = 'promptforge/optimize'
 
     const ZH = {
-      'button.optimize': '✦ 优化提示词',
-      'button.optimizing': '优化中…',
+      'button.optimize': 'Prompt',
+      'button.optimizing': '改写中…',
       'button.original': '↩ 原文',
       'button.optimized': '✦ 优化版',
-      'tip.optimize': '按《AI 使用心法》改写输入框里的提示词',
+      'tip.optimize': '按 AI 使用心法改写输入框里的提示词',
       'tip.optimizing': '正在改写，请稍候',
       'tip.original': '切回原提示词',
       'tip.optimized': '切回优化后的提示词',
-      'error.empty': '先写点内容，再点优化',
-      'error.failed': '优化失败',
+      'error.empty': '先写点内容，再点 Prompt',
+      'error.failed': '改写失败',
       'error.offline': '连不上改写服务',
     }
     const EN = {
-      'button.optimize': '✦ Optimize prompt',
-      'button.optimizing': 'Optimizing…',
+      'button.optimize': 'Prompt',
+      'button.optimizing': 'Rewriting…',
       'button.original': '↩ Original',
       'button.optimized': '✦ Optimized',
       'tip.optimize': 'Rewrite the draft by the AI-usage doctrine',
@@ -38,7 +38,7 @@ window.__ModuleLoader__.load({
       'tip.original': 'Switch back to the original prompt',
       'tip.optimized': 'Switch back to the optimized prompt',
       'error.empty': 'Type something first',
-      'error.failed': 'Optimization failed',
+      'error.failed': 'Rewrite failed',
       'error.offline': 'Cannot reach the rewrite service',
     }
 

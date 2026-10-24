@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Prompt Forge",
-    "description": "Rewrite the composer draft by the AI-usage doctrine, with one button to toggle between the optimized prompt and the original."
+    "description": "Rewrite the composer draft into an executable prompt with a prompt-engineering doctrine: one button toggles between the optimized prompt and the original."
   }
 }
