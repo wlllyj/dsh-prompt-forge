@@ -20,7 +20,7 @@ export const Config = z.object({
     .number()
     .min(0)
     .max(2)
-    .default(0.8)
+    .default(1)
     .description('改写温度：越低越贴原文，越高越敢改结构')
     .volatile(),
   askFirst: z
@@ -48,7 +48,7 @@ const MAX_PROMPT_CHARS = 20_000
 const CALL_TIMEOUT_MS = 120_000
 
 /** The temperature a fresh install starts with. */
-export const DEFAULT_TEMPERATURE = 0.8
+export const DEFAULT_TEMPERATURE = 1
 
 /** This package's own directory, so the doctrine file resolves under any cwd. */
 const PACKAGE_DIR = path.dirname(fileURLToPath(import.meta.url))
@@ -73,6 +73,7 @@ export const BUILTIN_DOCTRINE = `你是「AI 使用心法」的提示词改写�
 - 验收标准必须能由第三方逐条核对：数字、条数、字数、必须包含的结构、必须给出的证据、可复现的动作。禁止写「简洁」「清晰」「专业」「合理」「适当」「尽量」「写得好」这类形容词判据——那等于没改。
 - 每一节都要给出前面没有的信息。如果某一节只是把「目标」换个说法再讲一遍，直接删掉它，宁缺勿凑。
 - 每个标题必须单独占一行、以 Markdown 二级标题 \`## \` 开头（例：\`## 目标\`）。不要写「目标：……」这种行内标签，也不要加粗代替标题——阅读的人要把每一节单独取出来用。
+- 列点必须编号、一条一行：凡是列出多条要求的地方（「验收标准」「背景与待确认」「交付格式」等），每条单独占一行，以 \`1. \` \`2. \` 这样的编号开头。不要把多条判据用分号压成一段——阅读的人要逐条勾选。
 - 只输出改写后的提示词正文：不要前言、不要解释改了什么、不要 Markdown 代码围栏。`
 
 /** Appended to the doctrine while the "ask first" switch is on. */
@@ -332,6 +333,32 @@ const VAGUE_CRITERIA = /简洁|清晰|专业|合理|适当|尽量|尽可能|写�
 /** Whitespace and punctuation, dropped before comparing two sections. */
 const NOISE = /[\s\p{P}]/gu
 
+/** Sections that are expected to be lists of numbered, one-per-line items. */
+const LIST_SECTIONS = /验收标准|背景与待确认|交付格式/u
+
+/** A line that carries its own number, e.g. `1. …`. */
+const NUMBERED_LINE = /^\s*\d+[.)、]\s+\S/u
+
+/**
+ * Does this list-style section put each item on its own numbered line? The
+ * pick-rows UI can only offer one checkbox per line, so a paragraph that joins
+ * several criteria with semicolons is unusable even when its content is fine.
+ * @param {string} body the section body.
+ * @returns {boolean} true when the section is fine (or is not a list at all).
+ */
+function isNumberedList(body) {
+  const lines = String(body ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+  if (lines.length >= 2) return lines.filter((line) => NUMBERED_LINE.test(line)).length >= 2
+  const only = lines[0] ?? ''
+  if (NUMBERED_LINE.test(only)) return true
+  // One physical line: a single item may carry details after one semicolon, but
+  // two or more semicolons mean several criteria were crammed into one row.
+  return (only.match(/[；;]/gu) ?? []).length < 2
+}
+
 /**
  * Check a rewrite against the same standards the doctrine asks for, so the host
  * can ask once more instead of shipping an over-long or padded result.
@@ -347,6 +374,13 @@ export function reviewRewrite(text, budget) {
   if (length > Math.round(budget.maxChars * 1.15)) issues.push('too-long')
   const criteria = rows.find((row) => /验收标准/u.test(row.heading ?? '') || /^验收标准/u.test(row.body))
   if (criteria !== undefined && VAGUE_CRITERIA.test(criteria.body)) issues.push('vague-criteria')
+  for (const row of rows) {
+    const heading = row.heading ?? ''
+    if (!LIST_SECTIONS.test(heading)) continue
+    if (isNumberedList(row.body)) continue
+    issues.push('unnumbered-items')
+    break
+  }
   const normalized = rows.map((row) => row.body.replace(NOISE, ''))
   for (let left = 0; left < normalized.length; left += 1) {
     for (let right = left + 1; right < normalized.length; right += 1) {
@@ -366,6 +400,8 @@ const ISSUE_TEXT = {
   'vague-criteria': () =>
     '「验收标准」里出现了形容词判据（简洁/清晰/专业…），换成第三方能逐条核对的数字、条数或可复现动作。',
   'duplicate-section': () => '有两节在说同一件事（通常是把「目标」换个说法又讲一遍），删掉其中一节。',
+  'unnumbered-items': () =>
+    '列点没有编号：「验收标准」「背景与待确认」「交付格式」里每一条都要单独占一行、以 `1. ` `2. ` 开头；不要用分号把多条判据压成一段。',
 }
 
 /**

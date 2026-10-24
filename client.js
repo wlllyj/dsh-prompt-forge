@@ -59,7 +59,7 @@ window.__ModuleLoader__.load({
       'settings.saved': '已保存',
       'settings.modelNote': '模型：跟随当前对话，不单独设置',
       'settings.temperature': '温度',
-      'settings.temperatureHint': '0–2，越低越贴原文，越高越敢改结构，默认 0.8',
+      'settings.temperatureHint': '0–2，越低越贴原文，越高越敢改结构，默认 1',
       'settings.askFirst': '先问再答',
       'settings.askFirstHint': '改写稿里加入「先提出三个内行必问的问题」的开场',
       'settings.doctrinePath': '规则文件',
@@ -98,7 +98,7 @@ window.__ModuleLoader__.load({
       'settings.saved': 'Saved',
       'settings.modelNote': 'Model: follows this conversation, not configurable',
       'settings.temperature': 'Temperature',
-      'settings.temperatureHint': '0–2: lower stays close to the draft, higher reshapes it; default 0.8',
+      'settings.temperatureHint': '0–2: lower stays close to the draft, higher reshapes it; default 1',
       'settings.askFirst': 'Ask first',
       'settings.askFirstHint': 'Open the rewrite with three insider questions to answer first',
       'settings.doctrinePath': 'Doctrine file',
@@ -200,7 +200,7 @@ window.__ModuleLoader__.load({
     /** The pill and the panel are two slot entries, so they share this store. */
     const emptyBucket = () => ({ status: 'idle', parts: [], selected: [], error: '' })
     /** The settings the Host ships with; the form starts from these. */
-    const EMPTY_CONFIG = { temperature: 0.8, askFirst: true, doctrinePath: '' }
+    const EMPTY_CONFIG = { temperature: 1, askFirst: true, doctrinePath: '' }
     const emptySettings = () => ({
       status: 'idle',
       values: EMPTY_CONFIG,

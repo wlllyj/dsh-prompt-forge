@@ -116,7 +116,7 @@ test('the unknowns doctrine asks for a short unnumbered list and no rewrite', ()
 test('readConfig reads a volatile ref', () => {
   const config = Config({})
   assert.equal(readConfig(config.askFirst, false), true)
-  assert.equal(readConfig(config.temperature, 0), 0.8)
+  assert.equal(readConfig(config.temperature, 0), 1)
   assert.equal(readConfig(config.doctrinePath, 'z'), '')
 })
 
@@ -220,10 +220,36 @@ test('reviewRewrite flags an answer that is far longer than its budget', () => {
   assert.ok(reviewRewrite('## 目标\n' + '很长的一句'.repeat(60), budget).includes('too-long'))
 })
 
+test('reviewRewrite wants list items numbered one per line', () => {
+  const budget = complexityBudget('把会议记录整理成三条待办。')
+  const crammed = [
+    '## 目标',
+    '把会议记录整理成 3 条待办。',
+    '## 验收标准（可外部验证）',
+    '动手前先问我 3 个问题；恰好 3 条且每条一行；每条不超过 40 字。',
+  ].join('\n')
+  assert.deepEqual(reviewRewrite(crammed, budget), ['unnumbered-items'])
+
+  const numbered = [
+    '## 目标',
+    '把会议记录整理成 3 条待办。',
+    '## 验收标准（可外部验证）',
+    '1. 动手前先问我 3 个问题，等我答完再写。',
+    '2. 恰好 3 条，每条一行，写清负责人与截止时间。',
+    '3. 每条不超过 40 字。',
+  ].join('\n')
+  assert.deepEqual(reviewRewrite(numbered, budget), [])
+
+  // A single item may carry detail after one semicolon; two mean it was crammed.
+  const oneItem = ['## 目标', '把会议记录整理成 3 条待办。', '## 验收标准', '1. 恰好 3 条；每条写清负责人。'].join('\n')
+  assert.deepEqual(reviewRewrite(oneItem, budget), [])
+})
+
 test('correctionInstruction names every issue it was given', () => {
-  const text = correctionInstruction(['too-long', 'vague-criteria'], complexityBudget('短活'))
+  const text = correctionInstruction(['too-long', 'vague-criteria', 'unnumbered-items'], complexityBudget('短活'))
   assert.match(text, /压到 150 字以内/u)
   assert.match(text, /形容词判据/u)
+  assert.match(text, /列点没有编号/u)
 })
 
 test('callModel retries once when the rewrite blows past its budget', async () => {
@@ -367,7 +393,7 @@ test('callModel retries once when the unknowns list is padded', async () => {
 test('the settings defaults match the Config schema', () => {
   assert.equal(PACKAGE_NAME, 'dsh-prompt-forge')
   assert.deepEqual(Object.keys(CONFIG_DEFAULTS).sort(), ['askFirst', 'doctrinePath', 'temperature'])
-  assert.equal(CONFIG_DEFAULTS.temperature, 0.8)
+  assert.equal(CONFIG_DEFAULTS.temperature, 1)
   assert.equal(CONFIG_DEFAULTS.askFirst, true)
   const shaped = Config({})
   assert.deepEqual(configValues(shaped), { ...CONFIG_DEFAULTS })
