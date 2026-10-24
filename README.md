@@ -23,7 +23,7 @@
 | 心法要点 | 在改写里的落地 |
 | --- | --- |
 | 判据代替禁令 | 把「不要啰嗦」「写好一点」换成可外部验证的验收标准：条数、字数、必须包含的结构、必须给出的证据 |
-| 先找未知再动手 | 改写稿开头单独一节，要求对方先提 3 个「内行必问、外行想不到」的问题，只问不答；可用 `askFirst` 关掉，改为写出「我推断的前提」与「仍需确认的点」 |
+| 先找未知再动手 | 改写稿开头单独一节，要求对方先提 3 个「内行必问、外行想不到」的问题，只问不答；可用 `askFirst` 关掉，改为在「未知与待确认」里写出「我据此推断的前提」与「仍需要你确认的点」 |
 | 关键处留白 | 口味、价值取舍、风险偏好这类只有人能拍板的选择，写成「这一项由我决定，先给我选项」 |
 | 便宜原型优先 | 大任务先要一个 10 分钟能看完的最小可运行版本，再迭代 |
 | 抬一层野心 | 只「做完」不够，同一份交付里再给一个更高标准的版本，或一个被低估的更优解 |
@@ -68,7 +68,7 @@ plugin_manager → action: install_bundle → target: <本目录的绝对路径>
 | --- | --- | --- |
 | `model` | string / `''` | 生成用的模型。留空＝跟随 profile 默认模型；也可写 `provider/model` 或只写 `model` |
 | `temperature` | number / `0.35` | 温度。越低越贴原文，越高越敢重组结构 |
-| `askFirst` | boolean / `true` | 「先问再答」开关。关掉后不再要求对方先提问，改为在正文里写出「已知前提」与「仍待确认」各 1–3 条 |
+| `askFirst` | boolean / `true` | 「先问再答」开关。关掉后不再要求对方先提问，改为在「未知与待确认」里写出「我据此推断的前提」与「仍需要你确认的点」各 1–3 条 |
 | `extraRules` | string / `''` | 追加到改写规则末尾的额外要求，例如团队自己的交付格式 |
 | `doctrinePath` | string / `''` | 自定义规则文件。留空＝用插件自带的 `doctrine.md`；可填绝对路径或相对插件目录的路径 |
 
@@ -121,7 +121,7 @@ agent 工具 `prompt_forge_optimize`：
 
 ## 验证记录
 
-- `node --test`：19 个用例全通过（两种「未知」段、规则文件加载与兜底、追加要求拼接、切段/切条、工具 schema 与拒绝路径、模型覆盖等）。
+- `node --test`：20 个用例全通过（两种「未知」段、规则文件加载与兜底、追加要求拼接、切段/切条、工具 schema 与拒绝路径、模型覆盖等）。
 - `plugin_manager install_bundle` → `application: applied`、`enabled: true`、`warnings: []`。
 - 插槽实测：`conversation.input.left` 有 `prompt-forge`（order 1100），`conversation.input.dock` 有 `prompt-forge-panel`（order 130），均 `active`。
 - Config：`Config.listConfigs` 里该行 `status: "schema"`，五个字段都投影进设置表单。
