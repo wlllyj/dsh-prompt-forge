@@ -2,10 +2,11 @@
  * Prompt Forge — Client half.
  *
  * One pill in the composer tool row (`conversation.input.left`): `✦ Prompt`.
- * It opens a panel above the composer card (`conversation.input.dock`) with two
- * tabs — rewrite the draft, or list the unknowns it hides. Neither tab touches
- * the draft: each answer arrives as pickable rows, and the user decides which
- * rows to replace the draft with or append to it.
+ * It opens a panel above the composer card (`conversation.input.dock`) with three
+ * tabs — rewrite the draft, list the unknowns it hides, or edit this plugin's own
+ * settings. The two generation tabs never touch the draft: each answer arrives as
+ * pickable rows, and the user decides which rows to replace the draft with or
+ * append to it.
  */
 window.__ModuleLoader__.load({
   id: 'dsh-prompt-forge',
@@ -16,10 +17,20 @@ window.__ModuleLoader__.load({
     const NS = 'prompt-forge'
     const SLOT = 'conversation.input.left'
     const DOCK = 'conversation.input.dock'
-    /** One endpoint per tab; the Host answers both with `{ text, parts }`. */
+    /** One endpoint per generation tab; the Host answers both with `{ text, parts }`. */
     const ENDPOINTS = { prompt: 'promptforge/optimize', unknowns: 'promptforge/unknowns' }
-    /** The two tabs, in display order. */
-    const TABS = ['prompt', 'unknowns']
+    /** The settings endpoint: GET the live values, POST a new set. */
+    const CONFIG_ENDPOINT = 'promptforge/config'
+    /** The tabs, in display order. */
+    const TABS = ['prompt', 'unknowns', 'settings']
+    /** The settings form's fields, in display order. */
+    const FIELDS = [
+      { name: 'model', kind: 'text', placeholder: 'settings.modelPlaceholder' },
+      { name: 'temperature', kind: 'number', hint: 'settings.temperatureHint' },
+      { name: 'askFirst', kind: 'checkbox', hint: 'settings.askFirstHint' },
+      { name: 'extraRules', kind: 'textarea', placeholder: 'settings.extraRulesPlaceholder' },
+      { name: 'doctrinePath', kind: 'text', placeholder: 'settings.doctrinePathPlaceholder' },
+    ]
 
     const ZH = {
       'button.open': '✦ Prompt',
@@ -42,6 +53,26 @@ window.__ModuleLoader__.load({
       'error.failed': '生成失败',
       'error.offline': '连不上改写服务',
       'error.nothing': '先勾选要放进输入框的部分',
+      'tab.settings': '设置',
+      'hint.settings': '改动写进 profile 的插件配置行，保存后立即生效，不用重启。',
+      'settings.loading': '读取配置…',
+      'settings.loadFailed': '读取配置失败',
+      'settings.saveFailed': '保存失败',
+      'settings.saved': '已保存',
+      'settings.model': '模型',
+      'settings.modelPlaceholder': '留空 = 跟随 profile 默认模型，可写 provider/model',
+      'settings.temperature': '温度',
+      'settings.temperatureHint': '0–2，越低越贴原文，越高越敢改结构',
+      'settings.askFirst': '先问再答',
+      'settings.askFirstHint': '改写稿里加入「先提出三个内行必问的问题」的开场',
+      'settings.extraRules': '追加规则',
+      'settings.extraRulesPlaceholder': '追加到改写规则末尾的要求，可留空',
+      'settings.doctrinePath': '规则文件',
+      'settings.doctrinePathPlaceholder': '自定义规则文件路径，留空用插件自带的 doctrine.md',
+      'action.save': '保存',
+      'action.saving': '保存中…',
+      'action.restore': '恢复默认',
+      'action.reload': '重新读取',
     }
     const EN = {
       'button.open': '✦ Prompt',
@@ -64,6 +95,26 @@ window.__ModuleLoader__.load({
       'error.failed': 'Generation failed',
       'error.offline': 'Cannot reach the rewrite service',
       'error.nothing': 'Pick at least one row first',
+      'tab.settings': 'Settings',
+      'hint.settings': 'Saved into your profile plugin config; effective immediately, no restart.',
+      'settings.loading': 'Reading settings…',
+      'settings.loadFailed': 'Could not read the settings',
+      'settings.saveFailed': 'Could not save',
+      'settings.saved': 'Saved',
+      'settings.model': 'Model',
+      'settings.modelPlaceholder': 'Empty = the profile default; provider/model also works',
+      'settings.temperature': 'Temperature',
+      'settings.temperatureHint': '0–2: lower stays close to the draft, higher reshapes it',
+      'settings.askFirst': 'Ask first',
+      'settings.askFirstHint': 'Open the rewrite with three insider questions to answer first',
+      'settings.extraRules': 'Extra rules',
+      'settings.extraRulesPlaceholder': 'Appended to the doctrine, may stay empty',
+      'settings.doctrinePath': 'Doctrine file',
+      'settings.doctrinePathPlaceholder': 'Custom rules file; empty uses the bundled doctrine.md',
+      'action.save': 'Save',
+      'action.saving': 'Saving…',
+      'action.restore': 'Restore defaults',
+      'action.reload': 'Reload',
     }
 
     /** Stable fallback selector for seats without a composer state. */
@@ -132,10 +183,48 @@ window.__ModuleLoader__.load({
       minWidth: '0',
     }
 
+    /** One settings input; matches the theme's recessed surface. */
+    const inputStyle = {
+      width: '100%',
+      boxSizing: 'border-box',
+      padding: '5px 8px',
+      borderRadius: '6px',
+      border: '1px solid var(--dsw-alias-border-l1)',
+      background: 'var(--dsw-alias-bg-base)',
+      color: 'var(--dsw-alias-label-primary)',
+      fontFamily: 'inherit',
+      fontSize: '12px',
+      lineHeight: '1.5',
+      outline: 'none',
+    }
+
+    /** The label above one settings input. */
+    const fieldLabelStyle = {
+      fontSize: '11px',
+      fontWeight: 600,
+      color: 'var(--dsw-alias-label-secondary)',
+    }
+
     /** The pill and the panel are two slot entries, so they share this store. */
     const emptyBucket = () => ({ status: 'idle', parts: [], selected: [], error: '' })
+    /** The settings the Host ships with; the form starts from these. */
+    const EMPTY_CONFIG = { model: '', temperature: 0.35, askFirst: true, extraRules: '', doctrinePath: '' }
+    const emptySettings = () => ({
+      status: 'idle',
+      values: EMPTY_CONFIG,
+      defaults: null,
+      saving: false,
+      saved: false,
+      error: '',
+    })
     const store = {
-      state: { open: false, tab: 'prompt', prompt: emptyBucket(), unknowns: emptyBucket() },
+      state: {
+        open: false,
+        tab: 'prompt',
+        prompt: emptyBucket(),
+        unknowns: emptyBucket(),
+        settings: emptySettings(),
+      },
       listeners: new Set(),
       get() {
         return store.state
@@ -220,6 +309,69 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Read the plugin's live settings from the Host.
+     * @param {(key: string) => string} t locale lookup.
+     * @returns {Promise<void>} resolves when the store is updated.
+     */
+    function readConfig(t) {
+      store.set({ settings: { ...store.get().settings, status: 'loading', error: '' } })
+      return fetch(CONFIG_ENDPOINT, { headers: { accept: 'application/json' } })
+        .then((response) => response.json())
+        .then((payload) => {
+          if (payload?.ok !== true) throw new Error(payload?.error?.message ?? t('settings.loadFailed'))
+          const value = payload?.value
+          store.set({
+            settings: {
+              status: 'ready',
+              values: { ...EMPTY_CONFIG, ...(value?.values ?? {}) },
+              defaults: { ...EMPTY_CONFIG, ...(value?.defaults ?? {}) },
+              saving: false,
+              saved: false,
+              error: '',
+            },
+          })
+        })
+        .catch((reason) => {
+          const message = reason instanceof Error && reason.message !== '' ? reason.message : t('settings.loadFailed')
+          store.set({ settings: { ...store.get().settings, status: 'error', error: message } })
+        })
+    }
+
+    /**
+     * Persist a set of settings through the Host (which writes the profile patch).
+     * @param {object} values the full settings object.
+     * @param {(key: string) => string} t locale lookup.
+     * @returns {Promise<void>} resolves when the store is updated.
+     */
+    function saveConfig(values, t) {
+      store.set({ settings: { ...store.get().settings, saving: true, saved: false, error: '' } })
+      return fetch(CONFIG_ENDPOINT, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ config: values }),
+      })
+        .then((response) => response.json())
+        .then((payload) => {
+          if (payload?.ok !== true) throw new Error(payload?.error?.message ?? t('settings.saveFailed'))
+          const value = payload?.value
+          store.set({
+            settings: {
+              status: 'ready',
+              values: { ...EMPTY_CONFIG, ...(value?.values ?? {}) },
+              defaults: { ...EMPTY_CONFIG, ...(value?.defaults ?? store.get().settings.defaults ?? {}) },
+              saving: false,
+              saved: true,
+              error: '',
+            },
+          })
+        })
+        .catch((reason) => {
+          const message = reason instanceof Error && reason.message !== '' ? reason.message : t('settings.saveFailed')
+          store.set({ settings: { ...store.get().settings, saving: false, saved: false, error: message } })
+        })
+    }
+
+    /**
      * The single composer pill: opens or closes the panel.
      * @param {object} props standard kit for the slot (t).
      */
@@ -263,7 +415,14 @@ window.__ModuleLoader__.load({
       const actions = props.inputActions
       const [busy, setBusy] = React.useState(false)
       const tab = TABS.includes(state.tab) ? state.tab : 'prompt'
-      const bucket = state[tab]
+      const isSettings = tab === 'settings'
+      const bucket = isSettings ? emptyBucket() : state[tab]
+
+      /** Load the settings the first time the settings tab is shown. */
+      React.useEffect(() => {
+        if (!state.open || !isSettings) return
+        if (store.get().settings.status === 'idle') readConfig(t)
+      }, [state.open, isSettings])
 
       if (!state.open) return null
 
@@ -346,7 +505,137 @@ window.__ModuleLoader__.load({
       }, t(`hint.${tab}`))
 
       let body
-      if (busy || bucket.status === 'busy') {
+      let footer
+      if (isSettings) {
+        const settings = state.settings
+        const values = settings.values ?? EMPTY_CONFIG
+        const setField = (name, value) => {
+          const current = store.get().settings
+          store.set({
+            settings: {
+              ...current,
+              values: { ...(current.values ?? EMPTY_CONFIG), [name]: value },
+              saved: false,
+              error: '',
+            },
+          })
+        }
+        const fields = FIELDS.map((field) => {
+          const value = values[field.name]
+          let control
+          if (field.kind === 'checkbox') {
+            control = h(
+              'label',
+              { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
+              h('input', {
+                type: 'checkbox',
+                checked: value === true,
+                onChange: (event) => setField(field.name, event.target.checked),
+                style: { accentColor: 'var(--dsw-alias-brand-primary)', margin: 0 },
+              }),
+              h(
+                'span',
+                { style: { fontSize: '11px', color: 'var(--dsw-alias-label-secondary)' } },
+                field.hint === undefined ? '' : t(field.hint),
+              ),
+            )
+          } else if (field.kind === 'textarea') {
+            control = h('textarea', {
+              rows: 3,
+              value: String(value ?? ''),
+              placeholder: field.placeholder === undefined ? '' : t(field.placeholder),
+              onChange: (event) => setField(field.name, event.target.value),
+              style: { ...inputStyle, resize: 'vertical', minHeight: '54px' },
+            })
+          } else {
+            const numeric = field.kind === 'number'
+            control = h('input', {
+              type: numeric ? 'number' : 'text',
+              min: numeric ? '0' : undefined,
+              max: numeric ? '2' : undefined,
+              step: numeric ? '0.05' : undefined,
+              value: String(value ?? ''),
+              placeholder: field.placeholder === undefined ? '' : t(field.placeholder),
+              onChange: (event) => setField(field.name, numeric ? Number(event.target.value) : event.target.value),
+              style: inputStyle,
+            })
+          }
+          return h(
+            'label',
+            { key: field.name, style: { display: 'flex', flexDirection: 'column', gap: '4px' } },
+            h('span', { style: fieldLabelStyle }, t(`settings.${field.name}`)),
+            control,
+            field.kind !== 'checkbox' && field.hint !== undefined
+              ? h('span', { style: { fontSize: '11px', color: 'var(--dsw-alias-state-idle-primary)' } }, t(field.hint))
+              : null,
+          )
+        })
+        const statusLine = settings.saving
+          ? t('action.busy')
+          : settings.saved
+            ? t('settings.saved')
+            : ''
+        body =
+          settings.status === 'idle' || settings.status === 'loading'
+            ? h(
+              'div',
+              { style: { fontSize: '12px', color: 'var(--dsw-alias-label-secondary)', padding: '6px 2px' } },
+              t('settings.loading'),
+            )
+            : h(
+              'div',
+              { style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
+              ...fields,
+              settings.error !== ''
+                ? h(
+                  'span',
+                  { style: { fontSize: '11px', color: 'var(--dsw-alias-state-error-primary)' } },
+                  settings.error,
+                )
+                : null,
+            )
+        footer = h(
+          'div',
+          { style: { display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' } },
+          h(
+            'button',
+            {
+              type: 'button',
+              'data-prompt-forge': 'save',
+              onClick: () => {
+                if (!settings.saving) saveConfig(store.get().settings.values ?? EMPTY_CONFIG, t)
+              },
+              style: buttonStyle,
+            },
+            settings.saving ? t('action.saving') : t('action.save'),
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              'data-prompt-forge': 'restore',
+              onClick: () => {
+                if (!settings.saving) saveConfig(store.get().settings.defaults ?? EMPTY_CONFIG, t)
+              },
+              style: buttonStyle,
+            },
+            t('action.restore'),
+          ),
+          settings.status === 'error'
+            ? h(
+              'button',
+              { type: 'button', onClick: () => readConfig(t), style: buttonStyle },
+              t('action.reload'),
+            )
+            : null,
+          h('span', { style: { flex: '1 1 auto' } }),
+          h(
+            'span',
+            { style: { fontSize: '11px', color: 'var(--dsw-alias-state-idle-primary)' } },
+            statusLine,
+          ),
+        )
+      } else if (busy || bucket.status === 'busy') {
         body = h(
           'div',
           { style: { fontSize: '12px', color: 'var(--dsw-alias-label-secondary)', padding: '6px 2px' } },
@@ -404,7 +693,7 @@ window.__ModuleLoader__.load({
         )
       }
 
-      const footer =
+      footer =
         bucket.status === 'done' && bucket.parts.length > 0
           ? h(
             'div',

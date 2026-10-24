@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Prompt Forge",
-    "description": "One Prompt button beside the composer: its panel rewrites the draft into an executable prompt by a prompt-engineering doctrine, or lists only the unknowns you have not considered. Length and item count both scale with the task. Answers come back as pickable rows, so you decide what replaces or extends the draft. The rules live in an editable file, and the plugin is user-invoked only — no tools are exposed to agents."
+    "description": "One Prompt button beside the composer: its panel rewrites the draft into an executable prompt by a prompt-engineering doctrine, lists only the unknowns you have not considered, or edits the plugin's own settings. Length and item count both scale with the task. Answers come back as pickable rows, so you decide what replaces or extends the draft. The rules live in an editable file, and the plugin is user-invoked only — no tools are exposed to agents."
   }
 }

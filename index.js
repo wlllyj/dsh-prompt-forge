@@ -1,9 +1,9 @@
 /**
  * Prompt Forge — host half.
  *
- * Two JSON endpoints for the one composer button (rewrite the draft / list the
- * unknowns). The plugin is user-invoked only: nothing here is exposed to a
- * model, so an agent never calls it on its own.
+ * Three JSON endpoints for the one composer button (rewrite the draft / list the
+ * unknowns / read and write the plugin settings). The plugin is user-invoked
+ * only: nothing here is exposed to a model, so an agent never calls it on its own.
  * The doctrine itself lives in ./doctrine.md so a team can edit it without
  * touching code; `BUILTIN_DOCTRINE` is the fallback when that file is missing.
  */
@@ -499,6 +499,69 @@ function readKnobs(config) {
   }
 }
 
+/** The plugin's package name, used to find its own Loader entry. */
+export const PACKAGE_NAME = 'dsh-prompt-forge'
+
+/** The defaults of the Config schema, so the panel can offer "restore default". */
+export const CONFIG_DEFAULTS = {
+  model: '',
+  temperature: 0.35,
+  askFirst: true,
+  extraRules: '',
+  doctrinePath: '',
+}
+
+/**
+ * Project the live config into the settings form the panel renders.
+ * @param {any} config the validated plugin config (volatile refs).
+ * @returns {{ model: string, temperature: number, askFirst: boolean, extraRules: string, doctrinePath: string }} the current values.
+ */
+export function configValues(config) {
+  const knobs = readKnobs(config)
+  return {
+    model: knobs.model,
+    temperature: knobs.temperature,
+    askFirst: knobs.askFirst,
+    extraRules: knobs.extraRules,
+    doctrinePath: knobs.doctrinePath,
+  }
+}
+
+/**
+ * Validate one settings submission from the panel. Unknown keys are ignored.
+ * @param {unknown} input the posted object.
+ * @returns {{ patch: Record<string, unknown>, errors: string[] }} accepted fields and the rejected ones.
+ */
+export function normalizeConfigInput(input) {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
+    return { patch: {}, errors: ['body'] }
+  }
+  const errors = []
+  const patch = {}
+  if (Object.hasOwn(input, 'model')) {
+    if (typeof input.model !== 'string') errors.push('model')
+    else patch.model = input.model.trim()
+  }
+  if (Object.hasOwn(input, 'temperature')) {
+    const value = Number(input.temperature)
+    if (!Number.isFinite(value)) errors.push('temperature')
+    else patch.temperature = Math.round(Math.min(2, Math.max(0, value)) * 100) / 100
+  }
+  if (Object.hasOwn(input, 'askFirst')) {
+    if (typeof input.askFirst !== 'boolean') errors.push('askFirst')
+    else patch.askFirst = input.askFirst
+  }
+  if (Object.hasOwn(input, 'extraRules')) {
+    if (typeof input.extraRules !== 'string') errors.push('extraRules')
+    else patch.extraRules = input.extraRules
+  }
+  if (Object.hasOwn(input, 'doctrinePath')) {
+    if (typeof input.doctrinePath !== 'string') errors.push('doctrinePath')
+    else patch.doctrinePath = input.doctrinePath.trim()
+  }
+  return { patch, errors }
+}
+
 /**
  * Append the user's extra rules to a base system prompt.
  * @param {string} base base system prompt.
@@ -718,6 +781,102 @@ function registerEndpoint(ctx, spec) {
 }
 
 /**
+ * Find this plugin's own Loader entry: the profile patch row that carries its config.
+ * @param {any} editor the host `configEditor` service.
+ * @returns {any} the entry, or undefined when the plugin was not loaded from a patch row.
+ */
+function findOwnEntry(editor) {
+  const entries = typeof editor?.entries === 'function' ? editor.entries() : []
+  return entries.find((entry) => entry?.options?.name === PACKAGE_NAME)
+    ?? entries.find((entry) => entry?.options?.id === 'prompt-forge')
+}
+
+/**
+ * Mount the settings endpoints the panel's settings tab talks to: GET the live
+ * values, POST a new set. Writes go through the host `configEditor`, so they land
+ * in the profile patch as a normal Loader override — and because every Config
+ * field is volatile, the running plugin picks them up without a reload.
+ * @param {any} ctx host context.
+ * @param {{ config: any, isDisposed: () => boolean }} spec the endpoint owner.
+ * @returns {() => void} disposer.
+ */
+function registerConfigEndpoints(ctx, spec) {
+  return ctx.webServer.register({
+    kind: 'exact',
+    path: `${ROUTE}/config`,
+    handler: async (req, res) => {
+      if (spec.isDisposed()) {
+        sendJson(res, 503, { ok: false, error: { code: 'disposed', message: 'plugin is unloading' } })
+        return
+      }
+
+      if (req.method === 'GET') {
+        sendJson(res, 200, { ok: true, value: { values: configValues(spec.config), defaults: CONFIG_DEFAULTS } })
+        return
+      }
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { ok: false, error: { code: 'method-not-allowed', message: 'use GET or POST' } })
+        return
+      }
+
+      let body
+      try {
+        body = await readJsonBody(req)
+      } catch (error) {
+        const code = String(error?.code ?? 'bad-request')
+        sendJson(res, code === 'body-too-large' ? 413 : 400, {
+          ok: false,
+          error: { code, message: 'could not read the request body' },
+        })
+        return
+      }
+
+      const input = body !== null && typeof body === 'object' && body.config !== undefined ? body.config : body
+      const { patch, errors } = normalizeConfigInput(input)
+      if (errors.length > 0) {
+        sendJson(res, 400, {
+          ok: false,
+          error: { code: 'invalid-config', message: `invalid fields: ${errors.join(', ')}` },
+        })
+        return
+      }
+
+      const editor = ctx.get('configEditor')
+      if (editor === undefined) {
+        sendJson(res, 503, {
+          ok: false,
+          error: { code: 'no-config-editor', message: 'this host has no configEditor service' },
+        })
+        return
+      }
+      const entry = findOwnEntry(editor)
+      if (entry === undefined) {
+        sendJson(res, 503, {
+          ok: false,
+          error: { code: 'no-entry', message: 'this plugin has no Loader entry to configure' },
+        })
+        return
+      }
+
+      try {
+        await editor.edit(entry, (current, inherited) => ({ ...inherited, ...current, ...patch }))
+      } catch (error) {
+        sendJson(res, 500, {
+          ok: false,
+          error: { code: 'save-failed', message: String(error?.message ?? error) },
+        })
+        return
+      }
+
+      sendJson(res, 200, {
+        ok: true,
+        value: { values: { ...configValues(spec.config), ...patch }, defaults: CONFIG_DEFAULTS },
+      })
+    },
+  })
+}
+
+/**
  * Mount the two endpoints.
  * @param {import('@deepseek-ai/dsh-core').Context} ctx host context.
  * @param {any} config the validated plugin config (volatile refs).
@@ -744,6 +903,9 @@ export function apply(ctx, config) {
     config,
   })
   ctx.effect(() => () => { disposeUnknowns() }, 'dsh-prompt-forge: route unknowns')
+
+  const disposeConfig = registerConfigEndpoints(ctx, { config, isDisposed })
+  ctx.effect(() => () => { disposeConfig() }, 'dsh-prompt-forge: route config')
 }
 
 export const inject = ['webServer']

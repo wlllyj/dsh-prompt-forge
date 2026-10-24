@@ -1,13 +1,13 @@
 # Prompt Forge（提示词工坊）
 
-给 DSH 的输入框加一个 `✦ Prompt` 按钮：点开一个面板，把你的草稿按「提示词心法」改写成能直接执行的提示词，或者先列出你没考虑到的未知。**改写结果不会自动覆盖草稿**——它按段/按条列出来，你勾选要用的部分，再决定「替换草稿」还是「追加到末尾」。
+给 DSH 的输入框加一个 `✦ Prompt` 按钮：点开一个面板，把你的草稿按「提示词心法」改写成能直接执行的提示词，或者先列出你没考虑到的未知。**改写结果不会自动覆盖草稿**——它按段/按条列出来，你勾选要用的部分，再决定「替换草稿」还是「追加到末尾」。面板里还有第三个页签「设置」，模型、温度、开关、规则文件都能在那里直接改，不用手编配置文件。
 
 插件只在输入框里由你点按触发：它不向模型暴露任何工具，agent 不会替你调用它，也不会在你没要求时改你的草稿。
 
 ## 它做什么
 
 1. 在输入框里写草稿，一句话也行。
-2. 点工具行左侧的 `✦ Prompt`：输入框上方展开面板，两个页签——`改写提示词` / `未知清单`。
+2. 点工具行左侧的 `✦ Prompt`：输入框上方展开面板，三个页签——`改写提示词` / `未知清单` / `设置`。
 3. 点 `生成改写`（或 `扫描未知`），等模型返回。
 4. 结果按行列出：改写稿按小节分（`目标`、`背景与约束`、`验收标准`……），未知清单按问题分（数量跟任务大小走，一行一个问句）。每行有勾选框，默认全选。
 5. 调整勾选 → 点 `替换草稿`（只把选中的部分写进输入框）或 `追加到末尾`（接在你原有文字后面）。点 `关闭` 收起面板，草稿保持不动。
@@ -84,9 +84,15 @@ plugin_manager → action: install_bundle → target: <本目录的绝对路径>
 
 > 以目录形式安装时 DSH 会把本目录链接进 profile：改完源码重新 `install_bundle` 即可生效，不需要重启应用。也可以先 `pnpm pack` 出 tgz 再装，适合只使用、不改代码的场景。
 
-## 配置
+## 配置：面板里的「设置」页签
 
-插件详情页会按下面的 schema 生成设置表单（字段都是 live 的，改完立即生效）：
+这个版本的 DSH 只有只读的插件列表，没有通用的「插件配置表单」页面，所以本插件把配置界面做进了自己的面板：`✦ Prompt` → 面板右上角 `设置`。
+
+表单里的五项就是下面这张表。点 `保存` 之后：
+
+1. 插件把自己的 Loader 条目改写成一条普通的配置覆盖（写进当前 profile 的 `cordis.patch.yml`，新增一行 `- id: prompt-forge / config: {...}`，下次启动也带着）；
+2. 所有字段都声明为 `volatile`，所以在运行中的插件上**立即生效**——不用重启应用，也不用刷新页面；
+3. 下次打开面板仍会读回当前值；点 `恢复默认` 直接把这五项写回默认值。
 
 | 字段 | 类型 / 默认值 | 作用 |
 | --- | --- | --- |
@@ -96,9 +102,11 @@ plugin_manager → action: install_bundle → target: <本目录的绝对路径>
 | `extraRules` | string / `''` | 追加到改写规则末尾的额外要求，例如团队自己的交付格式 |
 | `doctrinePath` | string / `''` | 自定义规则文件。留空＝用插件自带的 `doctrine.md`；可填绝对路径或相对插件目录的路径 |
 
+保存走的是宿主 `configEditor` 服务，和 DSH 自己写配置是同一条路径：文件锁、原子写、写完触发 reconcile。若 profile 的这条配置被 home patch 或命令行 overlay 覆盖，保存会失败并在面板里显示原因——那种情况下要去改覆盖它的那一层。
+
 ## 接口
 
-两条路由（仅本插件的客户端调用，不注册为 agent 工具），body 都是 `{ "text": "..." }`，返回的 `parts` 就是面板里一行一条的数据（前端只负责勾选和拼接）：
+三条路由（仅本插件的客户端调用，不注册为 agent 工具）。前两条的 body 都是 `{ "text": "..." }`，返回的 `parts` 就是面板里一行一条的数据（前端只负责勾选和拼接）：
 
 ```jsonc
 // POST /promptforge/optimize  → 按小节切开
@@ -113,11 +121,16 @@ plugin_manager → action: install_bundle → target: <本目录的绝对路径>
   "parts": [ { "heading": null, "body": "1. …？" }, { "heading": null, "body": "2. …？" } ],
   "provider": "…", "model": "…" } }
 
+// 设置：GET 读当前值，POST 写 { "config": { ... } }
+{ "ok": true, "value": {
+  "values": { "model": "", "temperature": 0.35, "askFirst": true, "extraRules": "", "doctrinePath": "" },
+  "defaults": { "model": "", "temperature": 0.35, "askFirst": true, "extraRules": "", "doctrinePath": "" } } }
+
 // 失败
 { "ok": false, "error": { "code": "empty-draft", "message": "the draft is empty" } }
 ```
 
-限制：草稿 ≤ 20000 字符，请求体 ≤ 200 KB，单次调用 ≤ 120 秒；非 `POST` 返回 405。
+限制：草稿 ≤ 20000 字符，请求体 ≤ 200 KB，单次调用 ≤ 120 秒；生成路由只接受 `POST`，设置路由只接受 `GET` / `POST`，其余返回 405。设置写不进去时返回 `500 save-failed`（附宿主原因），宿主没有 `configEditor` 时返回 `503 no-config-editor`。
 
 ## 为什么这样实现（而不是别的做法）
 
@@ -132,6 +145,7 @@ plugin_manager → action: install_bundle → target: <本目录的绝对路径>
 - **不用 `host.call`**：那是未公开的 package-private RPC；改用宿主 `ctx.webServer.register` + 浏览器同源 `fetch`（文档相对路径 `promptforge/optimize`），跨版本更稳。
 - **`conversation.input.left` 用自己的 id**：`kind: list`、`replaceRisk: none`，只会在旁边加一格，不会顶掉别的插件。
 - **Config 用 `@deepseek-ai/schemastery`**：与 DSH 设置页同一套 schema 体系；字段声明 `.volatile()` 才能进表单，并且写值直接提交到运行中的插件引用（不重挂载插件行）。
+- **配置界面做进面板，写值走宿主 `configEditor`**：这个版本的 DSH 没有通用插件配置表单，与其教用户手编 `cordis.patch.yml`，不如把表单放进面板；但写文件这件事不自己干——`configEditor` 自带文件锁、原子写、reconcile 与回滚，自己写 YAML 迟早和 Loader 打架。
 - **空答案重试一次**：推理型模型偶尔把预算全花在 reasoning 上、正文为空；`streamOnce` 会翻倍 `maxTokens` 并去掉 `reasoningEffort` 再试一次，避免面板里出现空白。
 - **规则外置成 `doctrine.md` 而不是写死在代码里**：改写标准属于团队知识，不属于代码；外置后改规则不用发版，也能被 diff 审阅。
 - **篇幅预算按草稿字数分档、由宿主算**：一句话的任务不该产出五百字。预算是代码算出来的硬数字，作为第一次调用末尾的「这一次的篇幅预算」交给模型；模型手感不可靠，数字可靠。
@@ -140,7 +154,7 @@ plugin_manager → action: install_bundle → target: <本目录的绝对路径>
 
 ## 验证记录
 
-- `node --test`：32 个用例全通过（两种「未知」段、规则文件加载与兜底、追加要求拼接、切段/切条、改写篇幅分档、未知条数分档、两份复查与纠正、模型覆盖等）。
+- `node --test`：36 个用例全通过（两种「未知」段、规则文件加载与兜底、追加要求拼接、切段/切条、改写篇幅分档、未知条数分档、两份复查与纠正、模型覆盖、配置读写与校验等）。
 - 篇幅实测（同一台机器、同一默认模型，改前 vs 改后）：
 
   | 草稿 | 改前（v0.4，固定五节） | 改后（v0.5） |
@@ -151,7 +165,7 @@ plugin_manager → action: install_bundle → target: <本目录的绝对路径>
 - `plugin_manager install_bundle` → `application: applied`、`enabled: true`、`warnings: []`。
 - 插槽实测：`conversation.input.left` 有 `prompt-forge`（order 1100），`conversation.input.dock` 有 `prompt-forge-panel`（order 130），均 `active`。
 - Config：`Config.listConfigs` 里该行 `status: "schema"`，五个字段都投影进设置表单。
-- 端到端：`/promptforge/optimize` 返回带 `parts` 的分节改写；`/promptforge/unknowns` 返回带 `parts` 的问句列表。
+- 端到端：`/promptforge/optimize` 返回带 `parts` 的分节改写；`/promptforge/unknowns` 返回带 `parts` 的问句列表；`/promptforge/config` 的 GET 读回五字段、POST 写回后 profile 的 `cordis.patch.yml` 出现 `prompt-forge` 配置行，且立即生效（下一次生成即用新值）。
 - 工具清单：`Tool.listTools` 里**没有** `prompt_forge_optimize`（v0.6 起不再暴露给模型）。
 
 ## 已知限制
@@ -161,6 +175,7 @@ plugin_manager → action: install_bundle → target: <本目录的绝对路径>
 - 勾选粒度是「小节 / 条目」级，不能在行内局部取舍。
 - 篇幅只是**软约束**：模型是概率输出，复查只纠一次，仍可能略超预算（尤其是小任务里既要有验收标准、又要保留「先问再答」时）；未知清单的条数同理，偶尔会多给一条。
 - 页签之间各自保留上一次结果，切换不会重跑；改过草稿后需要重新生成。
+- 设置只有面板这一个入口：DSH 的插件列表里没有通用配置表单，别处改配置只能手编 `cordis.patch.yml` 或调接口。
 
 ## 后续可加
 

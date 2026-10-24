@@ -7,7 +7,9 @@ import { fileURLToPath } from 'node:url'
 
 import {
   BUILTIN_DOCTRINE,
+  CONFIG_DEFAULTS,
   Config,
+  PACKAGE_NAME,
   UNKNOWNS_DOCTRINE,
   applyModelOverride,
   budgetInstruction,
@@ -17,8 +19,10 @@ import {
   cleanRewrite,
   complexityBudget,
   composeSystem,
+  configValues,
   correctionInstruction,
   loadDoctrine,
+  normalizeConfigInput,
   readConfig,
   reviewRewrite,
   reviewUnknowns,
@@ -373,4 +377,55 @@ test('callModel retries once when the unknowns list is padded', async () => {
   assert.equal(systems.length, 2, 'exactly one corrective pass')
   assert.match(systems[0], /条数预算/u)
   assert.match(systems[1], /重写要求/u)
+})
+
+test('the settings defaults match the Config schema', () => {
+  assert.equal(PACKAGE_NAME, 'dsh-prompt-forge')
+  assert.deepEqual(Object.keys(CONFIG_DEFAULTS).sort(), ['askFirst', 'doctrinePath', 'extraRules', 'model', 'temperature'])
+  assert.equal(CONFIG_DEFAULTS.temperature, 0.35)
+  assert.equal(CONFIG_DEFAULTS.askFirst, true)
+  const shaped = Config({})
+  assert.deepEqual(configValues(shaped), { ...CONFIG_DEFAULTS })
+})
+
+test('configValues reads volatile refs the same way the request path does', () => {
+  const config = Config({ model: 'deepseek-account/deepseek-pro', temperature: 1.1, askFirst: false })
+  const values = configValues(config)
+  assert.equal(values.model, 'deepseek-account/deepseek-pro')
+  assert.equal(values.temperature, 1.1)
+  assert.equal(values.askFirst, false)
+  assert.equal(values.extraRules, '')
+  assert.equal(values.doctrinePath, '')
+})
+
+test('normalizeConfigInput trims, clamps and rejects the wrong types', () => {
+  const accepted = normalizeConfigInput({
+    model: '  deepseek-flash  ',
+    temperature: 9,
+    askFirst: false,
+    extraRules: '少用反问',
+    doctrinePath: '  ./rules.md ',
+    ignored: 'x',
+  })
+  assert.deepEqual(accepted.errors, [])
+  assert.deepEqual(accepted.patch, {
+    model: 'deepseek-flash',
+    temperature: 2,
+    askFirst: false,
+    extraRules: '少用反问',
+    doctrinePath: './rules.md',
+  })
+
+  const rejected = normalizeConfigInput({ model: 1, temperature: 'hot', askFirst: 'yes', extraRules: null, doctrinePath: [] })
+  assert.deepEqual(rejected.errors.sort(), ['askFirst', 'doctrinePath', 'extraRules', 'model', 'temperature'])
+  assert.deepEqual(rejected.patch, {})
+
+  assert.deepEqual(normalizeConfigInput(null).errors, ['body'])
+  assert.deepEqual(normalizeConfigInput([1]).errors, ['body'])
+})
+
+test('normalizeConfigInput keeps a half-correct submission usable', () => {
+  const result = normalizeConfigInput({ temperature: -3, askFirst: 'nope' })
+  assert.deepEqual(result.errors, ['askFirst'])
+  assert.deepEqual(result.patch, { temperature: 0 })
 })
