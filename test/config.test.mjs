@@ -11,13 +11,18 @@ import {
   TOOL_NAME,
   UNKNOWNS_DOCTRINE,
   applyModelOverride,
+  budgetInstruction,
   buildDoctrine,
   buildSystem,
   buildTool,
+  callModel,
   cleanRewrite,
+  complexityBudget,
   composeSystem,
+  correctionInstruction,
   loadDoctrine,
   readConfig,
+  reviewRewrite,
   splitItems,
   splitSections,
 } from '../index.js'
@@ -189,4 +194,112 @@ test('splitItems splits run-together items and keeps unnumbered paragraphs whole
   ])
   assert.deepEqual(splitItems('只有一段话'), [{ heading: null, body: '只有一段话' }])
   assert.deepEqual(splitItems('  '), [])
+})
+
+test('complexityBudget scales with the draft instead of one fixed template', () => {
+  const tiny = complexityBudget('把这段会议记录整理成三条待办，明天发群里。')
+  assert.equal(tiny.tier, 'tiny')
+  assert.equal(tiny.maxSections, 2)
+  assert.equal(tiny.maxChars, 150)
+
+  const normal = complexityBudget('x'.repeat(200))
+  assert.equal(normal.tier, 'normal')
+  assert.equal(normal.maxSections, 4)
+
+  const large = complexityBudget('x'.repeat(800))
+  assert.equal(large.tier, 'large')
+  assert.equal(large.maxSections, 5)
+  assert.equal(large.maxChars, 1200)
+})
+
+test('budgetInstruction states the numbers the answer has to hit', () => {
+  assert.match(budgetInstruction(complexityBudget('短活')), /不超过 150 字、最多 2 节/u)
+  assert.match(budgetInstruction(complexityBudget('x'.repeat(800))), /不超过 1200 字、最多 5 节/u)
+})
+
+test('reviewRewrite catches padding, vague criteria and repeated sections', () => {
+  const budget = complexityBudget('把会议记录整理成三条待办。')
+  const bloated = [
+    '## 目标',
+    '把会议记录整理成三条待办。',
+    '## 背景与约束',
+    '把会议记录整理成三条待办。',
+    '## 验收标准',
+    '要简洁、要清晰、要专业。',
+    '## 交付格式',
+    '把会议记录整理成三条待办，明天发群里。',
+  ].join('\n')
+  const issues = reviewRewrite(bloated, budget)
+  assert.ok(issues.includes('too-many-sections'), 'four sections over a three-section budget')
+  assert.ok(issues.includes('vague-criteria'), 'adjective criteria are flagged')
+  assert.ok(issues.includes('duplicate-section'), 'the same goal restated twice is flagged')
+
+  const clean = ['## 目标', '把会议记录整理成 3 条待办。', '## 验收标准（可外部验证）', '- 恰好 3 条；每条 ≤ 30 字，包含动作、负责人、截止时间。'].join('\n')
+  assert.deepEqual(reviewRewrite(clean, budget), [])
+})
+
+test('reviewRewrite flags an answer that is far longer than its budget', () => {
+  const budget = complexityBudget('短活')
+  assert.ok(reviewRewrite('## 目标\n' + '很长的一句'.repeat(60), budget).includes('too-long'))
+})
+
+test('correctionInstruction names every issue it was given', () => {
+  const text = correctionInstruction(['too-long', 'vague-criteria'], complexityBudget('短活'))
+  assert.match(text, /压到 150 字以内/u)
+  assert.match(text, /形容词判据/u)
+})
+
+test('callModel retries once when the rewrite blows past its budget', async () => {
+  const draft = '把这段会议记录整理成三条待办。'
+  const padded = '## 目标\n把会议记录整理成三条待办。\n## 背景与约束\n把会议记录整理成三条待办。\n## 验收标准\n要简洁、要清晰。\n## 交付格式\n把会议记录整理成三条待办。'
+  const tight = '## 目标\n把会议记录整理成 3 条待办。\n## 验收标准（可外部验证）\n- 恰好 3 条；每条 ≤ 30 字，含动作与负责人。'
+  const systems = []
+  const llm = {
+    listProviders: () => [],
+    stream(options) {
+      const answer = systems.length === 0 ? padded : tight
+      systems.push(options.system)
+      return (async function* () {
+        yield { type: 'text-delta', index: 0, text: answer }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      })()
+    },
+  }
+  const ctx = {
+    get: (name) => {
+      if (name === 'llm') return llm
+      if (name === 'agentDefaultModel') return { currentSelection: () => route }
+      return undefined
+    },
+  }
+  const result = await callModel(ctx, { mode: 'prompt', config: Config({}), text: draft })
+  assert.equal(result.text, tight, 'the corrective pass replaces the padded answer')
+  assert.equal(systems.length, 2, 'exactly one corrective pass')
+  assert.match(systems[1], /重写要求/u)
+  assert.match(systems[0], /这一次的篇幅预算/u)
+})
+
+test('callModel leaves an acceptable rewrite alone', async () => {
+  const tight = '## 目标\n把会议记录整理成 3 条待办。\n## 验收标准（可外部验证）\n- 恰好 3 条；每条 ≤ 30 字，含动作与负责人。'
+  let calls = 0
+  const llm = {
+    listProviders: () => [],
+    stream() {
+      calls += 1
+      return (async function* () {
+        yield { type: 'text-delta', index: 0, text: tight }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      })()
+    },
+  }
+  const ctx = {
+    get: (name) => {
+      if (name === 'llm') return llm
+      if (name === 'agentDefaultModel') return { currentSelection: () => route }
+      return undefined
+    },
+  }
+  const result = await callModel(ctx, { mode: 'prompt', config: Config({}), text: '把会议记录整理成三条待办。' })
+  assert.equal(result.text, tight)
+  assert.equal(calls, 1)
 })

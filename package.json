@@ -1,6 +1,6 @@
 {
   "name": "dsh-prompt-forge",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "description": "One Prompt button beside the composer: a panel rewrites the draft by an editable prompt-engineering doctrine or lists the unknowns it hides, and returns pickable rows so the user decides what replaces or extends the draft.",
   "license": "MIT",

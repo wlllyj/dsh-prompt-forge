@@ -77,15 +77,17 @@ export const BUILTIN_DOCTRINE = `你是「AI 使用心法」的提示词改写�
 
 ## 改写规则
 - 保留原文的意图、素材、专有名词与限制，不扩大需求、不虚构事实与实现细节。
-- 用短小标题组织：「目标」「背景与约束」「未知与待确认」「验收标准（可外部验证）」「交付格式」。
+- 篇幅跟任务复杂度匹配：一句话的任务，改写完也只是一小段；不要用固定模板把短任务撑长。宿主每次都会给出这一篇的字数与节数上限，必须遵守。
+- 结构按需增节，默认只用两节：「目标」「验收标准（可外部验证）」。只有原文确实缺失、且必须由人来补的上下文，才加「背景与待确认」；只有产出物的格式本身就是关键约束时，才加「交付格式」。禁止为了凑对称而补节。
+- 验收标准必须能由第三方逐条核对：数字、条数、字数、必须包含的结构、必须给出的证据、可复现的动作。禁止写「简洁」「清晰」「专业」「合理」「适当」「尽量」「写得好」这类形容词判据——那等于没改。
+- 每一节都要给出前面没有的信息。如果某一节只是把「目标」换个说法再讲一遍，直接删掉它，宁缺勿凑。
 - 每个标题必须单独占一行、以 Markdown 二级标题 \`## \` 开头（例：\`## 目标\`）。不要写「目标：……」这种行内标签，也不要加粗代替标题——阅读的人要把每一节单独取出来用。
-- 原文只有一两句话时，不要强行套五个标题：保持简短，但必须补上验收标准与「未知与待确认」。
-- 长度控制在原文的 1.2–2.5 倍，不注水、不复述。
 - 只输出改写后的提示词正文：不要前言、不要解释改了什么、不要 Markdown 代码围栏。`
 
 /** Appended to the doctrine while the "ask first" switch is on. */
 export const ASK_FIRST_ON = `## 「未知」怎么写（先问再答：开）
-在改写稿最前面加一段「先问再答」：要求对方先提出 3 个「内行必问、外行想不到」的问题，只问不答，等回答之后再动手。这一段单独成节，不要混进其他段落。`
+在改写稿最前面加一段「先问再答」：要求对方先提出 3 个「内行必问、外行想不到」的问题，只问不答，等回答之后再动手。这一段单独成节，不要混进其他段落。
+这一段本身要短：一句话的任务 1–2 句，普通任务 2–3 句，不要把它写成一篇说明。`
 
 /** Appended to the doctrine while the switch is off. */
 export const ASK_FIRST_OFF = `## 「未知」怎么写（先问再答：关）
@@ -315,6 +317,94 @@ export function splitItems(text) {
 }
 
 /**
+ * Size budget for one rewrite, matched to how big the task in the draft is.
+ * A one-line errand deserves a one-paragraph prompt, not a five-section template.
+ * @param {string} draft the original prompt.
+ * @returns {{ tier: 'tiny' | 'normal' | 'large', chars: number, maxSections: number, maxChars: number }} the budget.
+ */
+export function complexityBudget(draft) {
+  const chars = typeof draft === 'string' ? draft.replace(/\s+/gu, ' ').trim().length : 0
+  if (chars < 40) return { tier: 'tiny', chars, maxSections: 2, maxChars: 150 }
+  if (chars < 200) return { tier: 'small', chars, maxSections: 3, maxChars: 240 }
+  if (chars < 800) return { tier: 'normal', chars, maxSections: 4, maxChars: 900 }
+  return { tier: 'large', chars, maxSections: 5, maxChars: Math.max(1200, Math.round(chars * 1.4)) }
+}
+
+/**
+ * The budget line handed to the model next to the doctrine. It comes after the
+ * doctrine, so it can downgrade a section the doctrine would otherwise add.
+ * @param {ReturnType<typeof complexityBudget>} budget the budget.
+ * @param {{ askFirst?: boolean }} [options] the switches in force.
+ * @returns {string} the instruction.
+ */
+export function budgetInstruction(budget, options = {}) {
+  const askLine = options.askFirst === false ? '' : ' 规则要求「先问再答」，但这一段不要单独成节：压成一句话（先问我哪几个问题再动手）写进「验收标准」第一条。'
+  if (budget.tier === 'tiny') {
+    return `原文只有一两句（${budget.chars} 字）：改写后不超过 ${budget.maxChars} 字、最多 ${budget.maxSections} 节——只写「目标」和「验收标准」两节。${askLine}不要补「背景与待确认」「交付格式」。`
+  }
+  if (budget.tier === 'small') {
+    return `原文较短（${budget.chars} 字）：改写后不超过 ${budget.maxChars} 字、最多 ${budget.maxSections} 节。默认只写「目标」「验收标准」「先后未知」三节；原文没有真正的上下文缺口时，不要去补「背景与待确认」「交付格式」。`
+  }
+  if (budget.tier === 'normal') {
+    return `原文中等（${budget.chars} 字）：改写后不超过 ${budget.maxChars} 字、最多 ${budget.maxSections} 节。每一节都必须给出前面没有的信息，只是换个说法复述「目标」的节，直接删掉。`
+  }
+  return `原文较长（${budget.chars} 字）：改写后不超过 ${budget.maxChars} 字、最多 ${budget.maxSections} 节。删掉所有复述与套话，只留下决定结果的要求。`
+}
+
+/** Adjective "criteria" that a third party cannot check — they mean nothing. */
+const VAGUE_CRITERIA = /简洁|清晰|专业|合理|适当|尽量|尽可能|写得好|通俗易懂|逻辑清楚/u
+
+/** Whitespace and punctuation, dropped before comparing two sections. */
+const NOISE = /[\s\p{P}]/gu
+
+/**
+ * Check a rewrite against the same standards the doctrine asks for, so the host
+ * can ask once more instead of shipping an over-long or padded result.
+ * @param {string} text the rewritten prompt.
+ * @param {ReturnType<typeof complexityBudget>} budget the budget it was asked to hit.
+ * @returns {string[]} issue codes; empty means acceptable.
+ */
+export function reviewRewrite(text, budget) {
+  const rows = splitSections(text)
+  const issues = []
+  if (rows.length > budget.maxSections) issues.push('too-many-sections')
+  const length = String(text ?? '').trim().length
+  if (length > Math.round(budget.maxChars * 1.15)) issues.push('too-long')
+  const criteria = rows.find((row) => /验收标准/u.test(row.heading ?? '') || /^验收标准/u.test(row.body))
+  if (criteria !== undefined && VAGUE_CRITERIA.test(criteria.body)) issues.push('vague-criteria')
+  const normalized = rows.map((row) => row.body.replace(NOISE, ''))
+  for (let left = 0; left < normalized.length; left += 1) {
+    for (let right = left + 1; right < normalized.length; right += 1) {
+      const a = normalized[left]
+      const b = normalized[right]
+      if (a.length < 12 || b.length < 12) continue
+      if (a === b || a.includes(b) || b.includes(a)) issues.push('duplicate-section')
+    }
+  }
+  return [...new Set(issues)]
+}
+
+/** How each issue is explained back to the model on the retry. */
+const ISSUE_TEXT = {
+  'too-many-sections': (budget) => `节数超了：最多 ${budget.maxSections} 节，把重复的、可以并进别节的删掉。`,
+  'too-long': (budget) => `太长：整份必须压到 ${budget.maxChars} 字以内（连标题算）。按顺序删：先删只复述目标的句子，再删修饰词，最后才删条目；宁可少一条验收标准，也不要超字数。`,
+  'vague-criteria': () =>
+    '「验收标准」里出现了形容词判据（简洁/清晰/专业…），换成第三方能逐条核对的数字、条数或可复现动作。',
+  'duplicate-section': () => '有两节在说同一件事（通常是把「目标」换个说法又讲一遍），删掉其中一节。',
+}
+
+/**
+ * The corrective paragraph appended on the retry.
+ * @param {string[]} issues issue codes from {@link reviewRewrite}.
+ * @param {ReturnType<typeof complexityBudget>} budget the budget.
+ * @returns {string} the instruction.
+ */
+export function correctionInstruction(issues, budget) {
+  const lines = issues.map((issue) => `- ${ISSUE_TEXT[issue]?.(budget) ?? issue}`)
+  return `上一次输出不合格，按下面几条重写一遍：\n${lines.join('\n')}\n仍然只输出改写后的提示词正文。`
+}
+
+/**
  * Pick the route/model for the call: the profile default, else the first
  * registered provider and its first model.
  * @param {any} llm the llm service.
@@ -391,14 +481,46 @@ export async function callModel(ctx, input) {
   }
 
   const system = buildSystem(input.mode, knobs)
+  if (input.mode !== 'prompt') {
+    const answer = await completeOnce(llm, route, system, knobs.temperature, input)
+    return { text: answer, provider: route.provider, model: route.model }
+  }
+
+  // A rewrite is checked against the budget of the draft it came from; one
+  // corrective pass fixes an over-long or padded answer before it reaches the UI.
+  const budget = complexityBudget(input.text)
+  const prompted = `${system}\n\n## 这一次的篇幅预算\n${budgetInstruction(budget)}`
+  const answer = await completeOnce(llm, route, prompted, knobs.temperature, input)
+  const issues = reviewRewrite(answer, budget)
+  if (issues.length === 0) return { text: answer, provider: route.provider, model: route.model }
+
+  const retried = await completeOnce(
+    llm,
+    route,
+    `${prompted}\n\n## 重写要求\n${correctionInstruction(issues, budget)}`,
+    0.2,
+    input,
+  )
+  const chosen = reviewRewrite(retried, budget).length <= issues.length ? retried : answer
+  return { text: chosen, provider: route.provider, model: route.model }
+}
+
+/**
+ * One complete answer, retrying once when a reasoning model streams no text.
+ * @param {any} llm the llm service.
+ * @param {{ provider: string, model: string, reasoningEffort?: string }} route the route to call.
+ * @param {string} system the system prompt.
+ * @param {number} temperature the temperature.
+ * @param {{ mode: 'prompt' | 'unknowns', text: string, signal?: AbortSignal }} input the call.
+ * @returns {Promise<string>} the cleaned text (never empty).
+ */
+async function completeOnce(llm, route, system, temperature, input) {
   // A reasoning model occasionally spends the whole budget on reasoning and
   // streams no text; one retry turns that into a normal answer.
   let lastEmpty
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const answer = await streamOnce(llm, route, system, knobs.temperature, input, lastEmpty !== undefined)
-    if (answer !== '') {
-      return { text: answer, provider: route.provider, model: route.model }
-    }
+    const answer = await streamOnce(llm, route, system, temperature, input, lastEmpty !== undefined)
+    if (answer !== '') return answer
     lastEmpty = Object.assign(new Error('the model returned an empty answer'), { code: 'empty-answer', status: 502 })
   }
   throw lastEmpty
