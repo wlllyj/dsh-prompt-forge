@@ -1,0 +1,8 @@
+# dependencies / build leftovers
+node_modules/
+
+# local artifacts
+*.zip
+*.log
+.DS_Store
+Thumbs.db
