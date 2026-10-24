@@ -78,6 +78,7 @@ export const BUILTIN_DOCTRINE = `你是「AI 使用心法」的提示词改写�
 ## 改写规则
 - 保留原文的意图、素材、专有名词与限制，不扩大需求、不虚构事实与实现细节。
 - 用短小标题组织：「目标」「背景与约束」「未知与待确认」「验收标准（可外部验证）」「交付格式」。
+- 每个标题必须单独占一行、以 Markdown 二级标题 \`## \` 开头（例：\`## 目标\`）。不要写「目标：……」这种行内标签，也不要加粗代替标题——阅读的人要把每一节单独取出来用。
 - 原文只有一两句话时，不要强行套五个标题：保持简短，但必须补上验收标准与「未知与待确认」。
 - 长度控制在原文的 1.2–2.5 倍，不注水、不复述。
 - 只输出改写后的提示词正文：不要前言、不要解释改了什么、不要 Markdown 代码围栏。`
@@ -226,6 +227,91 @@ export function cleanRewrite(text) {
   // A leading "改写后的提示词：" style label line.
   out = out.replace(/^(改写(?:后)?(?:的)?提示词|优化(?:后)?(?:的)?提示词|以下是[^：:]{0,20})[：:]\s*/u, '')
   return out.trim()
+}
+
+/**
+ * Split a rewritten prompt into the sections the panel renders as pickable rows.
+ * A heading line becomes its own row (heading kept so the chosen rows rebuild
+ * the same Markdown); text before the first heading becomes a heading-less row.
+ * @param {string} text the rewritten prompt.
+ * @returns {{ heading: string | null, body: string }[]} the rows.
+ */
+export function splitSections(text) {
+  const source = typeof text === 'string' ? text.trim() : ''
+  if (source === '') return []
+  /** @type {{ heading: string | null, body: string }[]} */
+  const rows = []
+  let heading = null
+  let buffer = []
+  const flush = () => {
+    const body = buffer.join('\n').trim()
+    if (body !== '') rows.push({ heading, body })
+    buffer = []
+  }
+  for (const line of source.split('\n')) {
+    const match = /^#{1,3}\s+(.+?)\s*$/u.exec(line)
+    if (match === null) {
+      buffer.push(line)
+      continue
+    }
+    flush()
+    heading = match[1].trim()
+  }
+  flush()
+  if (rows.length === 1 && rows[0].heading === null) {
+    // No Markdown heading at all: a model sometimes writes "目标：…" label
+    // paragraphs instead. Those still become one pickable row each.
+    return splitLabelRows(rows[0].body)
+  }
+  return rows.length === 0 ? [{ heading: null, body: source }] : rows
+}
+
+/**
+ * Split heading-less prose into paragraph rows, lifting a leading "标签：" out
+ * as the row heading.
+ * @param {string} text the prose.
+ * @returns {{ heading: string | null, body: string }[]} the rows.
+ */
+function splitLabelRows(text) {
+  const paragraphs = text
+    .split(/\n\s*\n/u)
+    .map((chunk) => chunk.trim())
+    .filter((chunk) => chunk !== '')
+  if (paragraphs.length <= 1) return [{ heading: null, body: text }]
+  return paragraphs.map((paragraph) => {
+    const match = /^([^：:\n]{2,18})[：:]\s*/u.exec(paragraph)
+    if (match === null) return { heading: null, body: paragraph }
+    const body = paragraph.slice(match[0].length).trim()
+    return body === '' ? { heading: null, body: paragraph } : { heading: match[1].trim(), body }
+  })
+}
+
+/**
+ * Split a blind-spot answer into one row per numbered item. Paragraphs without
+ * numbering stay whole; a paragraph holding several numbered items is split at
+ * the item boundaries.
+ * @param {string} text the answer.
+ * @returns {{ heading: string | null, body: string }[]} the rows.
+ */
+export function splitItems(text) {
+  const source = typeof text === 'string' ? text.trim() : ''
+  if (source === '') return []
+  /** @type {string[]} */
+  const items = []
+  for (const chunk of source.split(/\n\s*\n/u)) {
+    const lines = chunk.split('\n').filter((line) => line.trim() !== '')
+    if (lines.length === 0) continue
+    const starts = lines.map((line, index) => (/^\s*\d+[.)、]\s*/u.test(line) ? index : -1)).filter((index) => index >= 0)
+    if (starts.length <= 1) {
+      items.push(lines.join('\n').trim())
+      continue
+    }
+    starts.forEach((from, index) => {
+      const to = index + 1 < starts.length ? starts[index + 1] : lines.length
+      items.push(lines.slice(from, to).join('\n').trim())
+    })
+  }
+  return items.filter((item) => item !== '').map((body) => ({ heading: null, body }))
 }
 
 /**
@@ -421,9 +507,10 @@ function registerEndpoint(ctx, spec) {
 
       try {
         const answer = await callModel(ctx, { mode: spec.mode, config: spec.config, text, signal: controller.signal })
+        const parts = spec.mode === 'unknowns' ? splitItems(answer.text) : splitSections(answer.text)
         sendJson(res, 200, {
           ok: true,
-          value: { text: answer.text, provider: answer.provider, model: answer.model },
+          value: { text: answer.text, parts, provider: answer.provider, model: answer.model },
         })
       } catch (error) {
         sendJson(res, Number(error?.status ?? 502), {

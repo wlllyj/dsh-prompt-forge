@@ -1,11 +1,11 @@
 /**
  * Prompt Forge — Client half.
  *
- * Two pills in the composer tool row (`conversation.input.left`):
- *   ✦ Prompt   rewrite the draft, then toggle optimized <-> original
- *   未知       list only the unknowns (no rewrite), shown in the dock panel
- * The panel above the composer card (`conversation.input.dock`) renders that
- * list and can insert it into the draft.
+ * One pill in the composer tool row (`conversation.input.left`): `✦ Prompt`.
+ * It opens a panel above the composer card (`conversation.input.dock`) with two
+ * tabs — rewrite the draft, or list the unknowns it hides. Neither tab touches
+ * the draft: each answer arrives as pickable rows, and the user decides which
+ * rows to replace the draft with or append to it.
  */
 window.__ModuleLoader__.load({
   id: 'dsh-prompt-forge',
@@ -16,76 +16,85 @@ window.__ModuleLoader__.load({
     const NS = 'prompt-forge'
     const SLOT = 'conversation.input.left'
     const DOCK = 'conversation.input.dock'
-    const ENDPOINT_OPTIMIZE = 'promptforge/optimize'
-    const ENDPOINT_UNKNOWNS = 'promptforge/unknowns'
+    /** One endpoint per tab; the Host answers both with `{ text, parts }`. */
+    const ENDPOINTS = { prompt: 'promptforge/optimize', unknowns: 'promptforge/unknowns' }
+    /** The two tabs, in display order. */
+    const TABS = ['prompt', 'unknowns']
 
     const ZH = {
-      'button.optimize': '✦ Prompt',
-      'button.optimizing': '改写中…',
-      'button.original': '↩ 原文',
-      'button.optimized': '✦ 优化版',
-      'tip.optimize': '按 AI 使用心法改写输入框里的提示词',
-      'tip.optimizing': '正在改写，请稍候',
-      'tip.original': '切回原提示词',
-      'tip.optimized': '切回优化后的提示词',
-      'button.unknowns': '未知',
-      'button.unknownsBusy': '找未知…',
-      'tip.unknowns': '只列出你没考虑到的未知，不改写正文',
-      'unknowns.title': '未知清单（先回答这些，再让我动手）',
-      'unknowns.insert': '插入到输入框',
-      'unknowns.close': '关闭',
+      'button.open': '✦ Prompt',
+      'tip.open': '按提示词心法改写草稿，或先列出未知；结果勾选后再放进输入框',
+      'panel.title': 'Prompt Forge',
+      'tab.prompt': '改写提示词',
+      'tab.unknowns': '未知清单',
+      'hint.prompt': '改写不会直接覆盖草稿：勾选要用的段落，再决定替换还是追加。',
+      'hint.unknowns': '只列出你没考虑到的未知，不改写正文。回答完这些，再让 AI 动手。',
+      'action.run.prompt': '生成改写',
+      'action.run.unknowns': '扫描未知',
+      'action.busy': '生成中…',
+      'action.retry': '重试',
+      'action.selectAll': '全选',
+      'action.selectNone': '清空',
+      'action.replace': '替换草稿',
+      'action.append': '追加到末尾',
+      'action.close': '关闭',
       'error.empty': '先写点内容，再点 Prompt',
-      'error.failed': '改写失败',
+      'error.failed': '生成失败',
       'error.offline': '连不上改写服务',
+      'error.nothing': '先勾选要放进输入框的部分',
     }
     const EN = {
-      'button.optimize': '✦ Prompt',
-      'button.optimizing': 'Rewriting…',
-      'button.original': '↩ Original',
-      'button.optimized': '✦ Optimized',
-      'tip.optimize': 'Rewrite the draft by the AI-usage doctrine',
-      'tip.optimizing': 'Rewriting, please wait',
-      'tip.original': 'Switch back to the original prompt',
-      'tip.optimized': 'Switch back to the optimized prompt',
-      'button.unknowns': 'Unknowns',
-      'button.unknownsBusy': 'Scanning…',
-      'tip.unknowns': 'List what you have not considered, without rewriting',
-      'unknowns.title': 'Unknowns (answer these before I start)',
-      'unknowns.insert': 'Insert into the composer',
-      'unknowns.close': 'Close',
+      'button.open': '✦ Prompt',
+      'tip.open': 'Rewrite the draft by the prompt doctrine, or list its unknowns first',
+      'panel.title': 'Prompt Forge',
+      'tab.prompt': 'Rewrite',
+      'tab.unknowns': 'Unknowns',
+      'hint.prompt': 'The draft is not overwritten: pick the rows you want, then replace or append.',
+      'hint.unknowns': 'Only the unknowns you have not considered. Answer them before the AI starts.',
+      'action.run.prompt': 'Rewrite it',
+      'action.run.unknowns': 'Scan unknowns',
+      'action.busy': 'Working…',
+      'action.retry': 'Try again',
+      'action.selectAll': 'All',
+      'action.selectNone': 'None',
+      'action.replace': 'Replace draft',
+      'action.append': 'Append',
+      'action.close': 'Close',
       'error.empty': 'Type something first',
-      'error.failed': 'Rewrite failed',
+      'error.failed': 'Generation failed',
       'error.offline': 'Cannot reach the rewrite service',
+      'error.nothing': 'Pick at least one row first',
     }
 
     /** Stable fallback selector for seats without a composer state. */
     const noDraft = (selector) => selector({ draft: '' })
 
-    /** The pill's base look; hover/disabled variants are added per render. */
-    const baseStyle = {
+    /** The pill's base look; hover/active variants are added per render. */
+    const pillStyle = {
       display: 'inline-flex',
       alignItems: 'center',
       gap: '4px',
       height: '26px',
       padding: '0 9px',
       borderRadius: '999px',
-      border: '1px solid var(--dsw-alias-border-l)',
+      border: '1px solid var(--dsw-alias-border-l1)',
       background: 'transparent',
       color: 'var(--dsw-alias-label-secondary)',
       fontSize: '12px',
       lineHeight: '1',
       fontFamily: 'inherit',
       whiteSpace: 'nowrap',
+      cursor: 'pointer',
     }
 
-    /** Link-style button used inside the unknowns panel. */
-    const linkStyle = {
+    /** Small bordered button used inside the panel. */
+    const buttonStyle = {
       display: 'inline-flex',
       alignItems: 'center',
-      height: '20px',
-      padding: '0 6px',
+      height: '22px',
+      padding: '0 8px',
       borderRadius: '6px',
-      border: '1px solid var(--dsw-alias-border-l)',
+      border: '1px solid var(--dsw-alias-border-l1)',
       background: 'transparent',
       color: 'var(--dsw-alias-label-secondary)',
       fontSize: '11px',
@@ -95,34 +104,76 @@ window.__ModuleLoader__.load({
       whiteSpace: 'nowrap',
     }
 
-    /**
-     * The unknowns panel is a second slot entry, so the two halves of the
-     * feature talk through one module-level store instead of React context.
-     */
-    const unknownsStore = {
-      state: { text: '', original: '' },
+    /** The tab strip and one tab. */
+    const tabStyle = (active) => ({
+      ...buttonStyle,
+      border: active ? '1px solid var(--dsw-alias-brand-primary)' : '1px solid var(--dsw-alias-border-l1)',
+      color: active ? 'var(--dsw-alias-brand-primary)' : 'var(--dsw-alias-label-secondary)',
+    })
+
+    /** One pickable answer row. */
+    const rowStyle = {
+      display: 'flex',
+      alignItems: 'flex-start',
+      gap: '8px',
+      padding: '6px 8px',
+      borderRadius: '8px',
+      border: '1px solid var(--dsw-alias-border-l1)',
+      cursor: 'pointer',
+    }
+
+    /** Text of one row, keeping the model's line breaks. */
+    const rowTextStyle = {
+      fontSize: '12px',
+      lineHeight: '1.65',
+      color: 'var(--dsw-alias-label-primary)',
+      whiteSpace: 'pre-wrap',
+      wordBreak: 'break-word',
+      minWidth: '0',
+    }
+
+    /** The pill and the panel are two slot entries, so they share this store. */
+    const emptyBucket = () => ({ status: 'idle', parts: [], selected: [], error: '' })
+    const store = {
+      state: { open: false, tab: 'prompt', prompt: emptyBucket(), unknowns: emptyBucket() },
       listeners: new Set(),
       get() {
-        return unknownsStore.state
+        return store.state
       },
-      set(next) {
-        unknownsStore.state = next
-        for (const listener of Array.from(unknownsStore.listeners)) listener()
+      set(patch) {
+        store.state = { ...store.state, ...patch }
+        store.emit()
+      },
+      bucket(tab) {
+        return store.state[tab]
+      },
+      setBucket(tab, patch) {
+        store.state = { ...store.state, [tab]: { ...store.state[tab], ...patch } }
+        store.emit()
+      },
+      emit() {
+        for (const listener of Array.from(store.listeners)) listener()
       },
       subscribe(listener) {
-        unknownsStore.listeners.add(listener)
-        return () => unknownsStore.listeners.delete(listener)
+        store.listeners.add(listener)
+        return () => store.listeners.delete(listener)
       },
     }
 
     /** Subscribe to the store from a component. */
-    function useUnknowns() {
-      const [state, setState] = React.useState(unknownsStore.get())
-      React.useEffect(() => unknownsStore.subscribe(() => setState(unknownsStore.get())), [])
+    function useStore() {
+      const [state, setState] = React.useState(store.get())
+      React.useEffect(() => store.subscribe(() => setState(store.get())), [])
       return state
     }
 
-    /** POST one draft to a Host endpoint and resolve its text. */
+    /**
+     * POST one draft to a Host endpoint and resolve its rows.
+     * @param {string} path the endpoint, relative to the GUI base.
+     * @param {string} text the draft.
+     * @param {(key: string) => string} t locale lookup.
+     * @returns {Promise<{ heading: string | null, body: string }[]>} the rows.
+     */
     async function request(path, text, t) {
       let response
       try {
@@ -144,225 +195,268 @@ window.__ModuleLoader__.load({
         const message = payload?.error?.message
         throw new Error(typeof message === 'string' && message !== '' ? message : t('error.failed'))
       }
-      const result = payload.value?.text
-      if (typeof result !== 'string' || result.trim() === '') throw new Error(t('error.failed'))
-      return result
+      const value = payload.value
+      const rows = []
+      if (Array.isArray(value?.parts)) {
+        for (const part of value.parts) {
+          const body = typeof part?.body === 'string' ? part.body : ''
+          if (body.trim() === '') continue
+          rows.push({ heading: typeof part.heading === 'string' ? part.heading : null, body })
+        }
+      }
+      if (rows.length === 0 && typeof value?.text === 'string' && value.text.trim() !== '') {
+        rows.push({ heading: null, body: value.text.trim() })
+      }
+      if (rows.length === 0) throw new Error(t('error.failed'))
+      return rows
+    }
+
+    /** Rebuild Markdown from the selected rows. */
+    function joinRows(rows) {
+      return rows
+        .map((row) => (row.heading === null ? row.body : `## ${row.heading}\n${row.body}`))
+        .join('\n\n')
+        .trim()
     }
 
     /**
-     * The composer pills: optimize with a toggle, or list the unknowns.
-     * @param {object} props standard kit for the slot (useInput / inputActions / t).
+     * The single composer pill: opens or closes the panel.
+     * @param {object} props standard kit for the slot (t).
      */
     function PromptForgeButton(props) {
-      const useInput = typeof props.useInput === 'function' ? props.useInput : noDraft
-      const draftRaw = useInput((state) => (state === undefined ? '' : state.draft))
-      const draft = typeof draftRaw === 'string' ? draftRaw : ''
+      const state = useStore()
       const t = typeof props.t === 'function' ? props.t : (key) => ZH[key] ?? key
-      const actions = props.inputActions
-
-      /** Both wordings of the last optimization, kept while the box still holds one. */
-      const [pair, setPair] = React.useState(null)
-      const [view, setView] = React.useState('original')
-      const [busy, setBusy] = React.useState(false)
-      const [unknownBusy, setUnknownBusy] = React.useState(false)
-      const [hover, setHover] = React.useState(null)
-      const [error, setError] = React.useState(null)
-
-      // The user edited the box: the stored pair no longer describes it.
-      React.useEffect(() => {
-        if (pair === null) return
-        if (draft === pair.original || draft === pair.optimized) return
-        setPair(null)
-        setView('original')
-      }, [draft, pair])
-
-      React.useEffect(() => {
-        if (error === null) return
-        const timer = setTimeout(() => setError(null), 6000)
-        return () => clearTimeout(timer)
-      }, [error])
-
-      const writeDraft = (text) => {
-        if (actions !== undefined && typeof actions.setDraft === 'function') actions.setDraft(text)
-      }
-
-      const onOptimize = () => {
-        if (busy || unknownBusy) return
-        if (pair !== null) {
-          if (view === 'optimized') {
-            writeDraft(pair.original)
-            setView('original')
-          } else {
-            writeDraft(pair.optimized)
-            setView('optimized')
-          }
-          return
-        }
-        if (draft.trim() === '') {
-          setError(t('error.empty'))
-          return
-        }
-        setBusy(true)
-        setError(null)
-        request(ENDPOINT_OPTIMIZE, draft, t)
-          .then((optimized) => {
-            setPair({ original: draft, optimized })
-            setView('optimized')
-            writeDraft(optimized)
-          })
-          .catch((reason) => {
-            setError(reason instanceof Error && reason.message !== '' ? reason.message : t('error.failed'))
-          })
-          .finally(() => setBusy(false))
-      }
-
-      const onUnknowns = () => {
-        if (busy || unknownBusy) return
-        if (draft.trim() === '') {
-          setError(t('error.empty'))
-          return
-        }
-        setUnknownBusy(true)
-        setError(null)
-        request(ENDPOINT_UNKNOWNS, draft, t)
-          .then((text) => unknownsStore.set({ text, original: draft }))
-          .catch((reason) => {
-            setError(reason instanceof Error && reason.message !== '' ? reason.message : t('error.failed'))
-          })
-          .finally(() => setUnknownBusy(false))
-      }
-
-      let label = t('button.optimize')
-      let title = t('tip.optimize')
-      if (busy) {
-        label = t('button.optimizing')
-        title = t('tip.optimizing')
-      } else if (pair !== null && view === 'optimized') {
-        label = t('button.original')
-        title = t('tip.original')
-      } else if (pair !== null) {
-        label = t('button.optimized')
-        title = t('tip.optimized')
-      }
-      const disabled = busy || unknownBusy || (pair === null && draft.trim() === '')
-      const unknownLabel = unknownBusy ? t('button.unknownsBusy') : t('button.unknowns')
-      const unknownDisabled = busy || unknownBusy || draft.trim() === ''
-
-      const pill = (key, text, tip, onClick, isDisabled, active) =>
-        h(
-          'button',
-          {
-            type: 'button',
-            'data-prompt-forge': key,
-            onClick,
-            disabled: isDisabled,
-            title: tip,
-            'aria-label': tip,
-            onMouseEnter: () => setHover(key),
-            onMouseLeave: () => setHover((current) => (current === key ? null : current)),
-            style: {
-              ...baseStyle,
-              background: hover === key && !isDisabled ? 'var(--dsw-alias-interactive-bg-hover)' : 'transparent',
-              opacity: isDisabled ? 0.45 : 1,
-              cursor: isDisabled ? 'default' : 'pointer',
-              color: active ? 'var(--dsw-alias-label-primary-bluish)' : 'var(--dsw-alias-label-secondary)',
-            },
-          },
-          text,
-        )
+      const [hover, setHover] = React.useState(false)
+      const active = state.open
 
       return h(
-        'div',
+        'button',
         {
-          'data-prompt-forge': 'seat',
-          style: { display: 'inline-flex', alignItems: 'center', gap: '6px', minWidth: '0' },
+          type: 'button',
+          'data-prompt-forge': 'button',
+          onClick: () => store.set({ open: !store.get().open }),
+          title: t('tip.open'),
+          'aria-label': t('tip.open'),
+          onMouseEnter: () => setHover(true),
+          onMouseLeave: () => setHover(false),
+          style: {
+            ...pillStyle,
+            background: hover && !active ? 'var(--dsw-alias-bg-layer-2)' : 'transparent',
+            color: active ? 'var(--dsw-alias-brand-primary)' : 'var(--dsw-alias-label-secondary)',
+            border: active ? '1px solid var(--dsw-alias-brand-primary)' : '1px solid var(--dsw-alias-border-l1)',
+          },
         },
-        pill('button', label, title, onOptimize, disabled, pair !== null && view === 'optimized'),
-        pill('unknowns', unknownLabel, t('tip.unknowns'), onUnknowns, unknownDisabled, false),
-        error === null
-          ? null
-          : h(
-            'span',
-            {
-              'data-prompt-forge': 'error',
-              title: error,
-              style: {
-                fontSize: '11px',
-                color: 'var(--dsw-alias-state-error-primary)',
-                maxWidth: '220px',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              },
-            },
-            error,
-          ),
+        t('button.open'),
       )
     }
 
     /**
-     * The unknowns panel above the composer card. Renders nothing until the
-     * "未知" pill has produced a list.
-     * @param {object} props standard kit for the dock slot.
+     * The panel above the composer card: tabs, one answer, pickable rows.
+     * @param {object} props standard kit for the dock slot (useInput / inputActions / t).
      */
-    function PromptForgeUnknownsPanel(props) {
-      const state = useUnknowns()
+    function PromptForgePanel(props) {
+      const state = useStore()
       const t = typeof props.t === 'function' ? props.t : (key) => ZH[key] ?? key
       const useInput = typeof props.useInput === 'function' ? props.useInput : noDraft
-      const draftRaw = useInput((socket) => (socket === undefined ? '' : socket.draft))
+      const draftRaw = useInput((input) => (input === undefined ? '' : input.draft))
       const draft = typeof draftRaw === 'string' ? draftRaw : ''
       const actions = props.inputActions
+      const [busy, setBusy] = React.useState(false)
+      const tab = TABS.includes(state.tab) ? state.tab : 'prompt'
+      const bucket = state[tab]
 
-      if (state.text === '') return null
+      if (!state.open) return null
 
-      const insert = () => {
-        if (actions === undefined || typeof actions.setDraft !== 'function') return
-        const head = draft.trim()
-        actions.setDraft(head === '' ? state.text : `${head}\n\n${state.text}`)
-        unknownsStore.set({ text: '', original: '' })
+      const run = () => {
+        if (busy) return
+        if (draft.trim() === '') {
+          store.setBucket(tab, { status: 'error', error: t('error.empty'), parts: [], selected: [] })
+          return
+        }
+        setBusy(true)
+        store.setBucket(tab, { status: 'busy', error: '', parts: [], selected: [] })
+        request(ENDPOINTS[tab], draft, t)
+          .then((rows) => {
+            store.setBucket(tab, { status: 'done', parts: rows, selected: rows.map(() => true), error: '' })
+          })
+          .catch((reason) => {
+            const message = reason instanceof Error && reason.message !== '' ? reason.message : t('error.failed')
+            store.setBucket(tab, { status: 'error', error: message, parts: [], selected: [] })
+          })
+          .finally(() => setBusy(false))
       }
+
+      const toggle = (index) => {
+        const selected = bucket.selected.slice()
+        selected[index] = !selected[index]
+        store.setBucket(tab, { selected })
+      }
+
+      const selectAll = (value) => {
+        store.setBucket(tab, { selected: bucket.parts.map(() => value) })
+      }
+
+      const deliver = (mode) => {
+        const picked = bucket.parts.filter((_row, index) => bucket.selected[index] === true)
+        if (picked.length === 0) {
+          store.setBucket(tab, { status: 'error', error: t('error.nothing') })
+          return
+        }
+        if (actions === undefined || typeof actions.setDraft !== 'function') return
+        const text = joinRows(picked)
+        if (mode === 'append') {
+          const head = draft.trim()
+          actions.setDraft(head === '' ? text : `${head}\n\n${text}`)
+        } else {
+          actions.setDraft(text)
+        }
+        store.set({ open: false })
+        store.setBucket(tab, { status: 'idle', parts: [], selected: [], error: '' })
+      }
+
+      const pickedCount = bucket.parts.filter((_row, index) => bucket.selected[index] === true).length
+
+      const header = h(
+        'div',
+        { style: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' } },
+        h(
+          'span',
+          { style: { fontSize: '12px', fontWeight: 600, color: 'var(--dsw-alias-label-secondary)' } },
+          t('panel.title'),
+        ),
+        ...TABS.map((name) =>
+          h(
+            'button',
+            {
+              key: name,
+              type: 'button',
+              'data-prompt-forge': `tab-${name}`,
+              onClick: () => store.set({ tab: name }),
+              style: tabStyle(name === tab),
+            },
+            t(`tab.${name}`),
+          ),
+        ),
+        h('span', { style: { flex: '1 1 auto' } }),
+        h('button', { type: 'button', onClick: () => store.set({ open: false }), style: buttonStyle }, t('action.close')),
+      )
+
+      const hint = h('div', {
+        style: { fontSize: '11px', lineHeight: '1.5', color: 'var(--dsw-alias-state-idle-primary)' },
+      }, t(`hint.${tab}`))
+
+      let body
+      if (busy || bucket.status === 'busy') {
+        body = h(
+          'div',
+          { style: { fontSize: '12px', color: 'var(--dsw-alias-label-secondary)', padding: '6px 2px' } },
+          t('action.busy'),
+        )
+      } else if (bucket.status === 'done' && bucket.parts.length > 0) {
+        body = h(
+          'div',
+          { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
+          ...bucket.parts.map((row, index) =>
+            h(
+              'label',
+              {
+                key: `${tab}-${index}`,
+                'data-prompt-forge': 'row',
+                style: {
+                  ...rowStyle,
+                  background:
+                    bucket.selected[index] === true ? 'var(--dsw-alias-bg-layer-2)' : 'transparent',
+                },
+              },
+              h('input', {
+                type: 'checkbox',
+                checked: bucket.selected[index] === true,
+                onChange: () => toggle(index),
+                style: { marginTop: '2px', accentColor: 'var(--dsw-alias-brand-primary)' },
+              }),
+              h(
+                'div',
+                { style: { display: 'flex', flexDirection: 'column', gap: '2px', minWidth: '0' } },
+                row.heading === null
+                  ? null
+                  : h(
+                    'span',
+                    { style: { fontSize: '11px', fontWeight: 600, color: 'var(--dsw-alias-label-secondary)' } },
+                    row.heading,
+                  ),
+                h('span', { style: rowTextStyle }, row.body),
+              ),
+            ),
+          ),
+        )
+      } else {
+        body = h(
+          'div',
+          { style: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' } },
+          h('button', { type: 'button', 'data-prompt-forge': 'run', onClick: run, style: buttonStyle }, t(`action.run.${tab}`)),
+          bucket.status === 'error'
+            ? h(
+              'span',
+              { style: { fontSize: '11px', color: 'var(--dsw-alias-state-error-primary)' } },
+              bucket.error === '' ? t('error.failed') : bucket.error,
+            )
+            : null,
+        )
+      }
+
+      const footer =
+        bucket.status === 'done' && bucket.parts.length > 0
+          ? h(
+            'div',
+            { style: { display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' } },
+            h('button', { type: 'button', onClick: () => selectAll(true), style: buttonStyle }, t('action.selectAll')),
+            h('button', { type: 'button', onClick: () => selectAll(false), style: buttonStyle }, t('action.selectNone')),
+            h('span', { style: { flex: '1 1 auto' } }),
+            h(
+              'span',
+              { style: { fontSize: '11px', color: 'var(--dsw-alias-state-idle-primary)' } },
+              `${pickedCount}/${bucket.parts.length}`,
+            ),
+            h(
+              'button',
+              { type: 'button', 'data-prompt-forge': 'replace', onClick: () => deliver('replace'), style: buttonStyle },
+              t('action.replace'),
+            ),
+            h(
+              'button',
+              { type: 'button', 'data-prompt-forge': 'append', onClick: () => deliver('append'), style: buttonStyle },
+              t('action.append'),
+            ),
+          )
+          : bucket.status === 'error'
+            ? h(
+              'div',
+              { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
+              h('button', { type: 'button', onClick: run, style: buttonStyle }, t('action.retry')),
+            )
+            : null
 
       return h(
         'div',
         {
-          'data-prompt-forge': 'unknowns-panel',
+          'data-prompt-forge': 'panel',
           style: {
             display: 'flex',
             flexDirection: 'column',
-            gap: '6px',
+            gap: '8px',
             margin: '0 0 8px',
-            padding: '8px 10px',
-            border: '1px solid var(--dsw-alias-border-l)',
+            padding: '10px 12px',
+            border: '1px solid var(--dsw-alias-border-l1)',
             borderRadius: '10px',
-            maxHeight: '38vh',
+            background: 'var(--dsw-alias-bg-layer-1)',
+            maxHeight: '46vh',
             overflow: 'auto',
           },
         },
-        h(
-          'div',
-          { style: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' } },
-          h(
-            'span',
-            { style: { fontSize: '12px', fontWeight: 600, color: 'var(--dsw-alias-label-secondary)' } },
-            t('unknowns.title'),
-          ),
-          h('span', { style: { flex: '1 1 auto' } }),
-          h('button', { type: 'button', onClick: insert, style: linkStyle }, t('unknowns.insert')),
-          h('button', { type: 'button', onClick: () => unknownsStore.set({ text: '', original: '' }), style: linkStyle }, t('unknowns.close')),
-        ),
-        h(
-          'div',
-          {
-            style: {
-              fontSize: '12px',
-              lineHeight: '1.7',
-              color: 'var(--dsw-alias-label-primary)',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-            },
-          },
-          state.text,
-        ),
+        header,
+        hint,
+        body,
+        footer,
       )
     }
 
@@ -391,8 +485,8 @@ window.__ModuleLoader__.load({
         ctx.slots.inject(DOCK, () => {
           try {
             return ctx.slots.register(
-              { name: DOCK, id: 'prompt-forge-unknowns', order: 130, locale: NS },
-              PromptForgeUnknownsPanel,
+              { name: DOCK, id: 'prompt-forge-panel', order: 130, locale: NS },
+              PromptForgePanel,
             )
           } catch {
             return () => {}

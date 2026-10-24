@@ -18,6 +18,8 @@ import {
   composeSystem,
   loadDoctrine,
   readConfig,
+  splitItems,
+  splitSections,
 } from '../index.js'
 
 const route = { provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'high' }
@@ -146,4 +148,45 @@ test('buildTool exposes the tool name, schema, and a reject path', async () => {
   const noModel = await tool.execute({ prompt: '写个周报' }, { signal: undefined })
   assert.equal(noModel.ok, false)
   assert.equal(noModel.code, 'no-llm')
+})
+
+test('splitSections turns each Markdown heading into its own row', () => {
+  assert.deepEqual(splitSections('前言一句\n\n## 目标\n做 A\n\n## 验收标准\n- 三条都可得\n'), [
+    { heading: null, body: '前言一句' },
+    { heading: '目标', body: '做 A' },
+    { heading: '验收标准', body: '- 三条都可得' },
+  ])
+})
+
+test('splitSections keeps heading-less text whole and drops empty input', () => {
+  assert.deepEqual(splitSections('  一段没有标题的正文  '), [{ heading: null, body: '一段没有标题的正文' }])
+  assert.deepEqual(splitSections(''), [])
+  assert.deepEqual(splitSections('## 只有一个标题\n正文'), [{ heading: '只有一个标题', body: '正文' }])
+})
+
+test('splitSections falls back to label paragraphs when no heading exists', () => {
+  const rows = splitSections(
+    '先问再答：动手前先问我三个问题。\n\n目标：做 A。\n\n验收标准（可外部验证）：\n- 三条\n\n交付格式：两张表。',
+  )
+  assert.deepEqual(
+    rows.map((row) => row.heading),
+    ['先问再答', '目标', '验收标准（可外部验证）', '交付格式'],
+  )
+  assert.equal(rows[0].body, '动手前先问我三个问题。')
+  assert.equal(rows[2].body, '- 三条')
+})
+
+test('splitItems keeps one row per numbered item', () => {
+  const rows = splitItems('1. 问题一？——原因一\n\n2. 问题二？——原因二')
+  assert.deepEqual(rows.map((row) => row.body), ['1. 问题一？——原因一', '2. 问题二？——原因二'])
+  assert.deepEqual(rows.map((row) => row.heading), [null, null])
+})
+
+test('splitItems splits run-together items and keeps unnumbered paragraphs whole', () => {
+  assert.deepEqual(splitItems('1. 一？——因为甲\n2. 二？——因为乙').map((row) => row.body), [
+    '1. 一？——因为甲',
+    '2. 二？——因为乙',
+  ])
+  assert.deepEqual(splitItems('只有一段话'), [{ heading: null, body: '只有一段话' }])
+  assert.deepEqual(splitItems('  '), [])
 })

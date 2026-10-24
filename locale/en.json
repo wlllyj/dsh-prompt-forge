@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Prompt Forge",
-    "description": "Rewrite the composer draft into an executable prompt with a prompt-engineering doctrine, or list only the unknowns you have not considered. The rules live in an editable file, and the same rewrite is exposed to agents as a tool."
+    "description": "One Prompt button beside the composer: its panel rewrites the draft into an executable prompt by a prompt-engineering doctrine, or lists only the unknowns you have not considered. Answers come back as pickable rows, so you decide what replaces or extends the draft. The rules live in an editable file, and the same rewrite is exposed to agents as a tool."
   }
 }
