@@ -2,7 +2,7 @@
  * Prompt Forge — host half.
  *
  * Three JSON endpoints for the one composer button (rewrite the draft / list the
- * unknowns / read and write the plugin settings). The plugin is user-invoked
+ * rewrite the draft and read or write the plugin settings). The plugin is user-invoked
  * only: nothing here is exposed to a model, so an agent never calls it on its own.
  * The doctrine itself lives in ./doctrine.md so a team can edit it without
  * touching code; `BUILTIN_DOCTRINE` is the fallback when that file is missing.
@@ -84,16 +84,6 @@ export const ASK_FIRST_ON = `## 「未知」怎么写（先问再答：开）
 /** Appended to the doctrine while the switch is off. */
 export const ASK_FIRST_OFF = `## 「未知」怎么写（先问再答：关）
 不要要求对方先提问。改为在「未知与待确认」一节里写出「我据此推断的前提」与「仍需要你确认的点」，各 1–3 条。`
-
-/** System prompt of the unknowns-only mode (the second tab of the panel). */
-export const UNKNOWNS_DOCTRINE = `你是「AI 使用心法」的未知审查员。用户给你一段他想交给 AI 做的任务或提示词。
-
-你的任务：只列出未知，不改写原文、不评价好坏、不替用户回答。
-要求：
-- 每条都是「内行必问、外行想不到」的问题，覆盖目标、素材与边界、验收标准、口味取舍、风险与代价。
-- 一条只写一个问句：不写解释、不写建议、不写「为什么」。
-- 不要重复原文已经写明的信息；没有那么多未知就少写几条，绝不凑数。
-- 中文输出，只输出编号列表、一行一条：\`1. 问题？\`。不要前言、不要总结、不要代码围栏。`
 
 /**
  * Compose the system prompt for one rewrite.
@@ -265,34 +255,6 @@ function splitLabelRows(text) {
 }
 
 /**
- * Split a blind-spot answer into one row per numbered item. Paragraphs without
- * numbering stay whole; a paragraph holding several numbered items is split at
- * the item boundaries.
- * @param {string} text the answer.
- * @returns {{ heading: string | null, body: string }[]} the rows.
- */
-export function splitItems(text) {
-  const source = typeof text === 'string' ? text.trim() : ''
-  if (source === '') return []
-  /** @type {string[]} */
-  const items = []
-  for (const chunk of source.split(/\n\s*\n/u)) {
-    const lines = chunk.split('\n').filter((line) => line.trim() !== '')
-    if (lines.length === 0) continue
-    const starts = lines.map((line, index) => (/^\s*\d+[.)、]\s*/u.test(line) ? index : -1)).filter((index) => index >= 0)
-    if (starts.length <= 1) {
-      items.push(lines.join('\n').trim())
-      continue
-    }
-    starts.forEach((from, index) => {
-      const to = index + 1 < starts.length ? starts[index + 1] : lines.length
-      items.push(lines.slice(from, to).join('\n').trim())
-    })
-  }
-  return items.filter((item) => item !== '').map((body) => ({ heading: null, body }))
-}
-
-/**
  * Size budget for one rewrite, matched to how big the task in the draft is.
  * A one-line errand deserves a one-paragraph prompt, not a five-section template.
  * @param {string} draft the original prompt.
@@ -416,66 +378,6 @@ export function correctionInstruction(issues, budget) {
 }
 
 /**
- * How many unknowns a draft deserves: the same tiers the rewrite uses, so a
- * one-line errand gets two questions instead of five padded ones.
- * @param {string} draft the original prompt.
- * @returns {{ tier: 'tiny' | 'small' | 'normal' | 'large', maxItems: number, maxChars: number, maxItemChars: number }} the budget.
- */
-export function unknownsBudget(draft) {
-  const { tier } = complexityBudget(draft)
-  if (tier === 'tiny') return { tier, maxItems: 2, maxChars: 70, maxItemChars: 28 }
-  if (tier === 'small') return { tier, maxItems: 3, maxChars: 120, maxItemChars: 32 }
-  if (tier === 'normal') return { tier, maxItems: 5, maxChars: 260, maxItemChars: 42 }
-  return { tier, maxItems: 6, maxChars: 420, maxItemChars: 60 }
-}
-
-/**
- * The count line handed to the model for the unknowns mode.
- * @param {ReturnType<typeof unknownsBudget>} budget the budget.
- * @returns {string} the instruction.
- */
-export function unknownsInstruction(budget) {
-  return `这一份最多 ${budget.maxItems} 条、整份不超过 ${budget.maxChars} 字、每条不超过 ${budget.maxItemChars} 字。按重要性排序：最可能改变结果的那个未知放第一条。宁可少写一条，也不要凑数。`
-}
-
-/**
- * Check an unknowns list against its budget: too many questions, too wordy, or
- * an explanation that the doctrine asked it to drop.
- * @param {string} text the model's list.
- * @param {ReturnType<typeof unknownsBudget>} budget the budget it was asked to hit.
- * @returns {string[]} issue codes; empty means acceptable.
- */
-export function reviewUnknowns(text, budget) {
-  const rows = splitItems(text)
-  const issues = []
-  if (rows.length > budget.maxItems) issues.push('too-many-items')
-  if (String(text ?? '').trim().length > Math.round(budget.maxChars * 1.3)) issues.push('too-long')
-  const longest = rows.reduce((max, row) => Math.max(max, row.body.replace(NOISE, '').length), 0)
-  if (longest > budget.maxItemChars + 10) issues.push('item-too-long')
-  if (rows.some((row) => /——|--|因为|之所以/u.test(row.body))) issues.push('has-explanation')
-  return [...new Set(issues)]
-}
-
-/** How each unknowns issue is explained back to the model on the retry. */
-const UNKNOWNS_ISSUE_TEXT = {
-  'too-many-items': (budget) => `条数超了：最多 ${budget.maxItems} 条，删掉最外围的问题，只留最可能改变结果的那几条。`,
-  'too-long': (budget) => `太长：整份压到 ${budget.maxChars} 字以内。`,
-  'item-too-long': (budget) => `单条太长：每条不超过 ${budget.maxItemChars} 字，只留问句本身。`,
-  'has-explanation': () => '不要写「——为什么」这类解释，只写问句。',
-}
-
-/**
- * The corrective paragraph appended on the unknowns retry.
- * @param {string[]} issues issue codes from {@link reviewUnknowns}.
- * @param {ReturnType<typeof unknownsBudget>} budget the budget.
- * @returns {string} the instruction.
- */
-export function unknownsCorrection(issues, budget) {
-  const lines = issues.map((issue) => `- ${UNKNOWNS_ISSUE_TEXT[issue]?.(budget) ?? issue}`)
-  return `上一次输出不合格，按下面几条重写一遍：\n${lines.join('\n')}\n仍然只输出编号列表，一行一条问句。`
-}
-
-/**
  * Pick the route/model for the call: the profile default, else the first
  * registered provider and its first model.
  * @param {any} llm the llm service.
@@ -579,20 +481,18 @@ export function pickConfigKeys(value) {
 }
 
 /**
- * Build the system prompt of one mode.
- * @param {'prompt' | 'unknowns'} mode which surface is being served.
- * @param {{ askFirst: boolean, doctrinePath: string }} knobs the shared knobs.
+ * Build the system prompt of the rewrite.
+ * @param {{ askFirst: boolean, doctrinePath: string }} knobs the knobs in force.
  * @returns {string} the system prompt.
  */
-export function buildSystem(mode, knobs) {
-  if (mode === 'unknowns') return UNKNOWNS_DOCTRINE
+export function buildSystem(knobs) {
   return buildDoctrine(knobs.askFirst, loadDoctrine(knobs.doctrinePath))
 }
 
 /**
  * Run one model call and return its text.
  * @param {any} ctx host context (needs `llm`).
- * @param {{ mode: 'prompt' | 'unknowns', config: any, text: string, signal?: AbortSignal }} input the call.
+ * @param {{ config: any, text: string, signal?: AbortSignal }} input the call.
  * @returns {Promise<{ text: string, provider: string, model: string }>} the answer.
  */
 export async function callModel(ctx, input) {
@@ -608,27 +508,7 @@ export async function callModel(ctx, input) {
     throw Object.assign(new Error(String(error?.message ?? error)), { code: String(error?.code ?? 'no-model') })
   }
 
-  const system = buildSystem(input.mode, knobs)
-  if (input.mode === 'unknowns') {
-    // Same discipline as the rewrite: a shrink budget by draft size, then one
-    // corrective pass when the list is padded or wordy.
-    const budget = unknownsBudget(input.text)
-    const prompted = `${system}\n\n## 这一份的条数预算\n${unknownsInstruction(budget)}`
-    const answer = await completeOnce(llm, route, prompted, knobs.temperature, input)
-    const issues = reviewUnknowns(answer, budget)
-    if (issues.length === 0) return { text: answer, provider: route.provider, model: route.model }
-
-    const retried = await completeOnce(
-      llm,
-      route,
-      `${prompted}\n\n## 重写要求\n${unknownsCorrection(issues, budget)}`,
-      0.2,
-      input,
-    )
-    const chosen = reviewUnknowns(retried, budget).length <= issues.length ? retried : answer
-    return { text: chosen, provider: route.provider, model: route.model }
-  }
-
+  const system = buildSystem(knobs)
   // A rewrite is checked against the budget of the draft it came from; one
   // corrective pass fixes an over-long or padded answer before it reaches the UI.
   const budget = complexityBudget(input.text)
@@ -654,7 +534,7 @@ export async function callModel(ctx, input) {
  * @param {{ provider: string, model: string, reasoningEffort?: string }} route the route to call.
  * @param {string} system the system prompt.
  * @param {number} temperature the temperature.
- * @param {{ mode: 'prompt' | 'unknowns', text: string, signal?: AbortSignal }} input the call.
+ * @param {{ text: string, signal?: AbortSignal }} input the call.
  * @returns {Promise<string>} the cleaned text (never empty).
  */
 async function completeOnce(llm, route, system, temperature, input) {
@@ -675,13 +555,13 @@ async function completeOnce(llm, route, system, temperature, input) {
  * @param {{ provider: string, model: string, reasoningEffort?: string }} route the route to call.
  * @param {string} system the system prompt.
  * @param {number} temperature the temperature.
- * @param {{ mode: 'prompt' | 'unknowns', text: string, signal?: AbortSignal }} input the call.
+ * @param {{ text: string, signal?: AbortSignal }} input the call.
  * @param {boolean} retry whether this is the retry (budget doubles, reasoning shrinks).
  * @returns {Promise<string>} the cleaned answer, or '' when the model streamed no text.
  */
 async function streamOnce(llm, route, system, temperature, input, retry) {
   /** Text budget for one call: reasoning tokens count against it. */
-  const maxTokens = (input.mode === 'unknowns' ? 3000 : 4000) * (retry ? 2 : 1)
+  const maxTokens = 4000 * (retry ? 2 : 1)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), CALL_TIMEOUT_MS)
   const abort = () => controller.abort()
@@ -725,7 +605,7 @@ async function streamOnce(llm, route, system, temperature, input, retry) {
 /**
  * Register one POST endpoint that answers with one cleaning model call.
  * @param {any} ctx host context.
- * @param {{ path: string, mode: 'prompt' | 'unknowns', field: string, isDisposed: () => boolean, config: any }} spec the endpoint.
+ * @param {{ path: string, field: string, isDisposed: () => boolean, config: any }} spec the endpoint.
  * @returns {() => void} disposer.
  */
 function registerEndpoint(ctx, spec) {
@@ -771,8 +651,8 @@ function registerEndpoint(ctx, spec) {
       res.on('close', () => controller.abort())
 
       try {
-        const answer = await callModel(ctx, { mode: spec.mode, config: spec.config, text, signal: controller.signal })
-        const parts = spec.mode === 'unknowns' ? splitItems(answer.text) : splitSections(answer.text)
+        const answer = await callModel(ctx, { config: spec.config, text, signal: controller.signal })
+        const parts = splitSections(answer.text)
         sendJson(res, 200, {
           ok: true,
           value: { text: answer.text, parts, provider: answer.provider, model: answer.model },
@@ -895,21 +775,11 @@ export function apply(ctx, config) {
   const isDisposed = () => disposed
   const disposeOptimize = registerEndpoint(ctx, {
     path: '/optimize',
-    mode: 'prompt',
     field: 'text',
     isDisposed,
     config,
   })
   ctx.effect(() => () => { disposeOptimize() }, 'dsh-prompt-forge: route optimize')
-
-  const disposeUnknowns = registerEndpoint(ctx, {
-    path: '/unknowns',
-    mode: 'unknowns',
-    field: 'text',
-    isDisposed,
-    config,
-  })
-  ctx.effect(() => () => { disposeUnknowns() }, 'dsh-prompt-forge: route unknowns')
 
   const disposeConfig = registerConfigEndpoints(ctx, { config, isDisposed })
   ctx.effect(() => () => { disposeConfig() }, 'dsh-prompt-forge: route config')

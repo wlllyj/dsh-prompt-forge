@@ -2,9 +2,9 @@
  * Prompt Forge — Client half.
  *
  * One pill in the composer tool row (`conversation.input.left`): `✦ Prompt`.
- * It opens a panel above the composer card (`conversation.input.dock`) with three
- * tabs — rewrite the draft, list the unknowns it hides, or edit this plugin's own
- * settings. The two generation tabs never touch the draft: each answer arrives as
+ * Clicking it rewrites the draft immediately and opens a panel above the composer
+ * card (`conversation.input.dock`) with two tabs — the rewrite, and this plugin's
+ * own settings. The rewrite never touches the draft: the answer arrives as
  * pickable rows, and the user decides which rows to replace the draft with or
  * append to it.
  */
@@ -17,12 +17,12 @@ window.__ModuleLoader__.load({
     const NS = 'prompt-forge'
     const SLOT = 'conversation.input.left'
     const DOCK = 'conversation.input.dock'
-    /** One endpoint per generation tab; the Host answers both with `{ text, parts }`. */
-    const ENDPOINTS = { prompt: 'promptforge/optimize', unknowns: 'promptforge/unknowns' }
+    /** The rewrite endpoint; the Host answers with `{ text, parts }`. */
+    const ENDPOINT = 'promptforge/optimize'
     /** The settings endpoint: GET the live values, POST a new set. */
     const CONFIG_ENDPOINT = 'promptforge/config'
     /** The tabs, in display order. */
-    const TABS = ['prompt', 'unknowns', 'settings']
+    const TABS = ['prompt', 'settings']
     /** The settings form's fields, in display order (model follows the chat, not a field). */
     const FIELDS = [
       { name: 'temperature', kind: 'number', hint: 'settings.temperatureHint' },
@@ -32,16 +32,13 @@ window.__ModuleLoader__.load({
 
     const ZH = {
       'button.open': '✦ Prompt',
-      'tip.open': '按提示词心法改写草稿，或先列出未知；结果勾选后再放进输入框',
+      'tip.open': '按提示词心法改写草稿；结果勾选后再放进输入框',
       'panel.title': 'Prompt Forge',
       'tab.prompt': '改写提示词',
-      'tab.unknowns': '未知清单',
-      'hint.prompt': '改写不会直接覆盖草稿：勾选要用的段落，再决定替换还是追加。',
-      'hint.unknowns': '只列出你没考虑到的未知，不改写正文。回答完这些，再让 AI 动手。',
-      'action.run.prompt': '生成改写',
-      'action.run.unknowns': '扫描未知',
+      'hint.prompt': '点开即改写，不会直接覆盖草稿：勾选要用的段落，再决定替换还是追加。',
       'action.busy': '生成中…',
       'action.retry': '重试',
+      'action.rerun': '重新改写',
       'action.selectAll': '全选',
       'action.selectNone': '清空',
       'action.replace': '替换草稿',
@@ -71,16 +68,13 @@ window.__ModuleLoader__.load({
     }
     const EN = {
       'button.open': '✦ Prompt',
-      'tip.open': 'Rewrite the draft by the prompt doctrine, or list its unknowns first',
+      'tip.open': 'Rewrite the draft by the prompt doctrine',
       'panel.title': 'Prompt Forge',
       'tab.prompt': 'Rewrite',
-      'tab.unknowns': 'Unknowns',
-      'hint.prompt': 'The draft is not overwritten: pick the rows you want, then replace or append.',
-      'hint.unknowns': 'Only the unknowns you have not considered. Answer them before the AI starts.',
-      'action.run.prompt': 'Rewrite it',
-      'action.run.unknowns': 'Scan unknowns',
+      'hint.prompt': 'Rewrites as soon as it opens, and never overwrites the draft: pick the rows, then replace or append.',
       'action.busy': 'Working…',
       'action.retry': 'Try again',
+      'action.rerun': 'Rewrite again',
       'action.selectAll': 'All',
       'action.selectNone': 'None',
       'action.replace': 'Replace draft',
@@ -214,8 +208,8 @@ window.__ModuleLoader__.load({
         open: false,
         tab: 'prompt',
         prompt: emptyBucket(),
-        unknowns: emptyBucket(),
         settings: emptySettings(),
+        runToken: 0,
       },
       listeners: new Set(),
       get() {
@@ -378,7 +372,11 @@ window.__ModuleLoader__.load({
         {
           type: 'button',
           'data-prompt-forge': 'button',
-          onClick: () => store.set({ open: !store.get().open }),
+          onClick: () => {
+            const state = store.get()
+            if (state.open) store.set({ open: false })
+            else store.set({ open: true, tab: 'prompt', runToken: state.runToken + 1 })
+          },
           title: t('tip.open'),
           'aria-label': t('tip.open'),
           onMouseEnter: () => setHover(true),
@@ -406,9 +404,16 @@ window.__ModuleLoader__.load({
       const draft = typeof draftRaw === 'string' ? draftRaw : ''
       const actions = props.inputActions
       const [busy, setBusy] = React.useState(false)
+      const lastRun = React.useRef(0)
       const tab = TABS.includes(state.tab) ? state.tab : 'prompt'
       const isSettings = tab === 'settings'
       const bucket = isSettings ? emptyBucket() : state[tab]
+
+      /** Rewrite as soon as the pill opens the panel. */
+      React.useEffect(() => {
+        if (!state.open || state.tab === 'settings') return
+        if (state.runToken > 0) run(state.runToken)
+      }, [state.runToken])
 
       /** Load the settings the first time the settings tab is shown. */
       React.useEffect(() => {
@@ -418,7 +423,11 @@ window.__ModuleLoader__.load({
 
       if (!state.open) return null
 
-      const run = () => {
+      const run = (token) => {
+        if (typeof token === 'number') {
+          if (lastRun.current === token) return
+          lastRun.current = token
+        }
         if (busy) return
         if (draft.trim() === '') {
           store.setBucket(tab, { status: 'error', error: t('error.empty'), parts: [], selected: [] })
@@ -426,7 +435,7 @@ window.__ModuleLoader__.load({
         }
         setBusy(true)
         store.setBucket(tab, { status: 'busy', error: '', parts: [], selected: [] })
-        request(ENDPOINTS[tab], draft, t)
+        request(ENDPOINT, draft, t)
           .then((rows) => {
             store.setBucket(tab, { status: 'done', parts: rows, selected: rows.map(() => true), error: '' })
           })
@@ -676,18 +685,14 @@ window.__ModuleLoader__.load({
           ),
         )
       } else {
-        body = h(
-          'div',
-          { style: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' } },
-          h('button', { type: 'button', 'data-prompt-forge': 'run', onClick: run, style: buttonStyle }, t(`action.run.${tab}`)),
+        body =
           bucket.status === 'error'
             ? h(
               'span',
               { style: { fontSize: '11px', color: 'var(--dsw-alias-state-error-primary)' } },
               bucket.error === '' ? t('error.failed') : bucket.error,
             )
-            : null,
-        )
+            : null
       }
 
       footer =
@@ -718,7 +723,7 @@ window.__ModuleLoader__.load({
             ? h(
               'div',
               { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
-              h('button', { type: 'button', onClick: run, style: buttonStyle }, t('action.retry')),
+              h('button', { type: 'button', onClick: () => run(), style: buttonStyle }, t('action.retry')),
             )
             : null
 

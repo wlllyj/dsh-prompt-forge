@@ -1,7 +1,6 @@
 # Prompt Forge · 提示词工坊
 
-输入框旁边的一个 `✦ Prompt` 按钮：把草稿改写成一个更可执行的提示词，列出你没说但会被追问的未知，并且让插件自己的设置也能在面板里改。
-改写结果以「按行勾选」的形式返回——**不自动覆盖你的草稿**，你自己决定哪几行替换或追加。
+输入框旁边的一个 `✦ Prompt` 按钮：点一下就按提示词心法把草稿改写成一个更可执行的提示词，结果在面板里按行返回——**不自动覆盖你的草稿**，你自己决定哪几行替换或追加；插件自己的设置也在同一个面板里改。
 
 > 改写规则来自三篇公开文章被压缩成的一套可机检条目（见 [简介](#简介) 的心法映射表）：
 > [《找到你的未知》](https://claude.com/blog/a-field-guide-to-claude-fable-finding-your-unknowns)（先找未知，再动手）、
@@ -11,17 +10,14 @@
 
 ![改写提示词：结果按行返回，勾选后自己决定替换还是追加](docs/screenshots/01-rewrite.png)
 
-| 未知清单 | 设置 |
-| --- | --- |
-| ![只列问句，不写解释](docs/screenshots/02-unknowns.png) | ![面板里直接改插件配置](docs/screenshots/03-settings.png) |
+![设置：温度、先问再答、规则文件，改完即时生效](docs/screenshots/03-settings.png)
 
 ## 简介
 
 **它做什么**
 
-- 一个按钮、一个面板、三个页签：
-  - **改写提示词**：把草稿改成「目标 + 可外部验证的验收标准（+ 必要的背景/交付格式）」的结构；句子长短、条目多少跟着任务复杂度走，不套固定模板。
-  - **未知清单**：只列「内行会追问、你多半没想到」的问题，一行一个问句，不写解释，也不替你改写全文。
+- 一个按钮、一个面板、两个页签：
+  - **改写**：点开面板就开始改写，把草稿改成「目标 + 可外部验证的验收标准（+ 必要的背景/交付格式）」的结构；句子长短、条目多少跟着任务复杂度走，不套固定模板。
   - **设置**：温度、「先问再答」开关、自定义规则文件路径，改完即时生效，不用重启。
 - 结果按行返回并可勾选：`替换草稿` / `追加到末尾` / `全选` / `清空`，草稿在你按下按钮之前和之后都不被改动。
 - 每条结果在服务端先过一次机器复查（节数、字数、条目数、形容词判据、复述目标的节、列点是否编号），不合格会带着整改要求重写一次。
@@ -91,8 +87,8 @@ pnpm pack      # 生成 dsh-prompt-forge-<version>.tgz
 每次发版都会把打好包的 tgz 挂在 GitHub Release 上：
 
 ```sh
-curl -L -o dsh-prompt-forge-0.9.5.tgz \
-  https://github.com/wlllyj/dsh-prompt-forge/releases/download/v0.9.5/dsh-prompt-forge-0.9.5.tgz
+curl -L -o dsh-prompt-forge-0.10.0.tgz \
+  https://github.com/wlllyj/dsh-prompt-forge/releases/download/v0.10.0/dsh-prompt-forge-0.10.0.tgz
 ```
 
 把下载到的 `.tgz` 路径交给 `plugin_manager install_bundle`，然后刷新页面。
@@ -101,7 +97,7 @@ curl -L -o dsh-prompt-forge-0.9.5.tgz \
 
 1. 输入框左侧出现 `✦ Prompt` 胶囊（与已有的其它输入框按钮并排）。
 2. 设置 → 插件里能看到 `dsh-prompt-forge`，状态为启用。
-3. 点击按钮 → 面板出现在输入框上方，三个页签可切换。
+3. 点击按钮 → 面板出现在输入框上方并立刻开始改写，两个页签可切换。
 
 命令行自检（`<port>` 换成你 DSH Web 服务端口，桌面版常见为 `31021`）：
 
@@ -114,11 +110,11 @@ curl -s http://127.0.0.1:<port>/promptforge/config
 ## 用法
 
 1. 在输入框写下草稿（哪怕一句话也行）。
-2. 点 `✦ Prompt`，选择页签：**改写提示词** 或 **未知清单**。
-3. 等结果按行列出来；不想要的取消勾选，想保留多条就全选。
+2. 点 `✦ Prompt`：面板弹出来，同时**自动开始改写**（没有「生成改写」按钮，点按钮就是开始）。
+3. 等结果按行列出来；不想要的取消勾选，想保留多条就全选。右下角 `重新改写` 可以换一版。
 4. 点 `替换草稿`（用选中的行覆盖草稿）或 `追加到末尾`（保留原草稿，把选中内容接在后面），或直接 `关闭`。
 
-每个页签各自保留上次结果：切页签不会重跑，也不会覆盖另一个页签的结果。
+切到「设置」页签不会丢掉当前改写结果；再点一次 `✦ Prompt` 关闭面板。
 
 **示例（改写）**
 
@@ -138,15 +134,6 @@ curl -s http://127.0.0.1:<port>/promptforge/config
 1. 先只向我提三个「内行必问」的问题；我回答后，你再动手。
 2. 恰好三条，每条一行，包含：动作、负责人、截止时间。
 3. 记录里没写明的负责人或时间，标「【待补】」，不要猜测。
-```
-
-**示例（未知清单）**
-
-同一条草稿，点「未知清单」后（2 条、38 字）：
-
-```text
-1. 三条是恰好三条还是最多三条？
-2. 每条待办要不要写负责人和截止时间？
 ```
 
 **直接调接口**（脚本/自动化用，`<port>` 同上）：
@@ -177,12 +164,12 @@ curl -s -X POST http://127.0.0.1:<port>/promptforge/optimize \
 
 **篇幅预算（自动，不占配置项）**
 
-| 草稿字数 | 改写上限 | 未知清单上限 |
-| --- | --- | --- |
-| < 40 字（tiny） | ≤ 150 字、≤ 2 节 | ≤ 2 条 / 70 字 / 每条 ≤ 28 字 |
-| < 200 字（small） | ≤ 240 字、≤ 3 节 | ≤ 3 条 / 120 字 / 每条 ≤ 32 字 |
-| < 800 字（normal） | ≤ 900 字、≤ 4 节 | ≤ 5 条 / 260 字 / 每条 ≤ 42 字 |
-| ≥ 800 字（large） | ≤ 字数 × 1.4、≤ 5 节 | ≤ 6 条 / 420 字 / 每条 ≤ 60 字 |
+| 草稿字数 | 改写上限 |
+| --- | --- |
+| < 40 字（tiny） | ≤ 150 字、≤ 2 节 |
+| < 200 字（small） | ≤ 240 字、≤ 3 节 |
+| < 800 字（normal） | ≤ 900 字、≤ 4 节 |
+| ≥ 800 字（large） | ≤ 字数 × 1.4、≤ 5 节 |
 
 **规则文件**：把 [doctrine.md](doctrine.md) 整份替换成团队规范即可；也可以只把 `doctrinePath` 指向另一个文件（比如放在共享盘上），插件每次请求都会重新读取，不需要重启或重装。规则文件缺失或读不到时回退到内置副本。
 
@@ -206,14 +193,14 @@ curl -s -X POST http://127.0.0.1:<port>/promptforge/optimize \
 git clone https://github.com/wlllyj/dsh-prompt-forge.git
 cd dsh-prompt-forge
 pnpm install
-node --test       # 35 个用例
+node --test       # 26 个用例
 node --check index.js client.js
 ```
 
 约定：
 
 - 改规则：优先改 `doctrine.md`；如果改的是内置副本 `BUILTIN_DOCTRINE`（`index.js`），必须让它与 `doctrine.md` 逐字一致——测试会守这一条。
-- 改机器复查：`reviewRewrite` / `reviewUnknowns` 的每一类问题都要有正例与反例测试。
+- 改机器复查：`reviewRewrite` 的每一类问题都要有正例与反例测试。
 - 文档里不要写个人本机绝对路径。
 - 改了行为就升 `package.json` 的 `version`，并在 README 的「开发与验证」里补一行验证记录。
 - PR 请说明：改了什么行为、怎么验证的（命令 + 实际输出）。
@@ -268,10 +255,10 @@ url: https://github.com/wlllyj/dsh-prompt-forge
 name: wlllyj/dsh-prompt-forge
 category: ui
 description:
-  en: "Adds one Prompt button beside the composer that rewrites the draft with an editable prompt-engineering doctrine, lists the unknowns it hides, and edits the plugin's own settings in place, returning results as pickable rows instead of overwriting the draft."
-  zh: "在输入框旁加一个 ✦ Prompt 按钮：按可替换的提示词心法改写草稿、列出草稿里被忽略的未知，并在面板里直接改插件设置，结果按行返回而不是直接覆盖草稿。"
+  en: "Adds one Prompt button beside the composer: clicking it rewrites the draft with an editable prompt-engineering doctrine and returns the result as pickable rows instead of overwriting the draft, and the same panel edits the plugin's own settings in place."
+  zh: "在输入框旁加一个 ✦ Prompt 按钮：点一下就按可替换的提示词心法改写草稿，结果按行返回而不是直接覆盖草稿；同一个面板里还能直接改插件设置。"
 icon: https://raw.githubusercontent.com/wlllyj/dsh-prompt-forge/main/docs/icon-180.png
-tarball: https://github.com/wlllyj/dsh-prompt-forge/releases/download/v0.9.5/dsh-prompt-forge-0.9.5.tgz
+tarball: https://github.com/wlllyj/dsh-prompt-forge/releases/download/v0.10.0/dsh-prompt-forge-0.10.0.tgz
 ```
 
 **上架所需信息 → README 位置对照**
@@ -286,9 +273,9 @@ tarball: https://github.com/wlllyj/dsh-prompt-forge/releases/download/v0.9.5/dsh
 | `category` 贴合 | ✅ `ui` | 本 README「简介」 |
 | `description.en` 属实、与代码一致 | ✅ | 本 README 一级标题下三行 + [简介](#简介) |
 | 图标（GitHub 托管方形位图，约 96px） | ✅ `docs/icon-180.png`（由图内 `icon.svg` 渲染） | 见上方 yml 的 `icon:` |
-| 截图（1–8 张，相对路径） | ✅ `screenshots.json` 声明三张 | `docs/screenshots/` |
+| 截图（1–8 张，相对路径） | ✅ `screenshots.json` 声明两张 | `docs/screenshots/` |
 | npm 发布（可选） | 未发布，改用下一条 | `package.json` 的 `repository` |
-| 预构建 tgz（可选） | ✅ GitHub Release `v0.9.5` 附带 tgz | 见上方 yml 的 `tarball:` 与「安装 · 方式 C」 |
+| 预构建 tgz（可选） | ✅ GitHub Release `v0.10.0` 附带 tgz | 见上方 yml 的 `tarball:` 与「安装 · 方式 C」 |
 | 官方包用 `peerDependencies` | ✅ | `@deepseek-ai/schemastery` 已在 `peerDependencies` + `devDependencies` |
 
 **提交流程**：fork → 把 `docs/dsh-market-entry.yml` 复制成 `data/plugins/wlllyj__dsh-prompt-forge.yml` → 提 PR（一次 PR 最多 3 条）→ CI 会依次检查 `dsh.bundle`、仓库年龄、awesome-lint 与站点构建 → 合并后市场自动同步（通常一天内）。
@@ -299,11 +286,10 @@ tarball: https://github.com/wlllyj/dsh-prompt-forge/releases/download/v0.9.5/dsh
 
 | 项目 | 结果 |
 | --- | --- |
-| `node --test` | 35/35 通过 |
+| `node --test` | 26/26 通过 |
 | `node --check index.js client.js` | 通过 |
 | 安装 | `plugin_manager install_bundle` → `application: "applied"`，`warnings: []` |
 | 真实改写（21 字草稿） | 2 节 / 127–181 字（多次实测） |
-| 真实未知清单（21 字草稿） | 2 条 / 30–38 字 |
 | 设置页签读 | `GET /promptforge/config` → 三字段 values + defaults |
 | 设置页签写 | `POST /promptforge/config` → 写入 profile 的 `cordis.patch.yml`，volatile 热生效 |
 | agent 工具 | `Tool.listTools` 里**没有**本插件（v0.6 起不暴露） |

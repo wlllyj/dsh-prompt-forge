@@ -1,15 +1,20 @@
 {
   "name": "dsh-prompt-forge",
-  "version": "0.9.5",
+  "version": "0.10.0",
   "type": "module",
-  "description": "One Prompt button beside the composer: a panel rewrites the draft by an editable prompt-engineering doctrine, lists the unknowns it hides, and edits the plugin's own settings in place. Answers return as pickable rows so the user decides what replaces or extends the draft. Length and item count scale with the task; nothing is exposed to agents.",
+  "description": "One Prompt button beside the composer: clicking it rewrites the draft by an editable prompt-engineering doctrine and returns pickable rows instead of overwriting it; the same panel edits the plugin settings.",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/wlllyj/dsh-prompt-forge.git"
   },
   "homepage": "https://github.com/wlllyj/dsh-prompt-forge#readme",
-  "keywords": ["dsh", "dsh-plugin", "prompt", "prompt-engineering"],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "prompt",
+    "prompt-engineering"
+  ],
   "engines": {
     "node": "^22.19.0 || >=24.0.0",
     "dsh": ">=0.2.1-rc.1 <0.3.0-0"
@@ -38,11 +43,15 @@
     "test": "node --test"
   },
   "dsh": {
-    "bundle": { "patch": "./cordis.patch.yml" },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "platform": "web",
       "immediately": true,
-      "inject": ["@deepseek-ai/dsh-client-ui-conversation"]
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
     }
   }
 }
