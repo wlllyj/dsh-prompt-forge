@@ -742,6 +742,7 @@ window.__ModuleLoader__.load({
             background: 'var(--dsw-alias-bg-layer-1)',
             maxHeight: 'min(56vh, 520px)',
             overflow: 'hidden',
+            flexShrink: 0,
           },
         },
         h(
@@ -758,8 +759,8 @@ window.__ModuleLoader__.load({
               display: 'flex',
               flexDirection: 'column',
               gap: '8px',
-              flex: '1 1 auto',
-              minHeight: '0',
+              flex: '0 1 auto',
+              maxHeight: 'min(40vh, 360px)',
               overflowY: 'auto',
               overscrollBehavior: 'contain',
             },

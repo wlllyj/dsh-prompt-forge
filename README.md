@@ -87,8 +87,8 @@ pnpm pack      # 生成 dsh-prompt-forge-<version>.tgz
 每次发版都会把打好包的 tgz 挂在 GitHub Release 上：
 
 ```sh
-curl -L -o dsh-prompt-forge-0.10.0.tgz \
-  https://github.com/wlllyj/dsh-prompt-forge/releases/download/v0.10.0/dsh-prompt-forge-0.10.0.tgz
+curl -L -o dsh-prompt-forge-0.10.1.tgz \
+  https://github.com/wlllyj/dsh-prompt-forge/releases/download/v0.10.1/dsh-prompt-forge-0.10.1.tgz
 ```
 
 把下载到的 `.tgz` 路径交给 `plugin_manager install_bundle`，然后刷新页面。
@@ -258,7 +258,7 @@ description:
   en: "Adds one Prompt button beside the composer: clicking it rewrites the draft with an editable prompt-engineering doctrine and returns the result as pickable rows instead of overwriting the draft, and the same panel edits the plugin's own settings in place."
   zh: "在输入框旁加一个 ✦ Prompt 按钮：点一下就按可替换的提示词心法改写草稿，结果按行返回而不是直接覆盖草稿；同一个面板里还能直接改插件设置。"
 icon: https://raw.githubusercontent.com/wlllyj/dsh-prompt-forge/main/docs/icon-180.png
-tarball: https://github.com/wlllyj/dsh-prompt-forge/releases/download/v0.10.0/dsh-prompt-forge-0.10.0.tgz
+tarball: https://github.com/wlllyj/dsh-prompt-forge/releases/download/v0.10.1/dsh-prompt-forge-0.10.1.tgz
 ```
 
 **上架所需信息 → README 位置对照**
@@ -275,7 +275,7 @@ tarball: https://github.com/wlllyj/dsh-prompt-forge/releases/download/v0.10.0/ds
 | 图标（GitHub 托管方形位图，约 96px） | ✅ `docs/icon-180.png`（由图内 `icon.svg` 渲染） | 见上方 yml 的 `icon:` |
 | 截图（1–8 张，相对路径） | ✅ `screenshots.json` 声明两张 | `docs/screenshots/` |
 | npm 发布（可选） | 未发布，改用下一条 | `package.json` 的 `repository` |
-| 预构建 tgz（可选） | ✅ GitHub Release `v0.10.0` 附带 tgz | 见上方 yml 的 `tarball:` 与「安装 · 方式 C」 |
+| 预构建 tgz（可选） | ✅ GitHub Release `v0.10.1` 附带 tgz | 见上方 yml 的 `tarball:` 与「安装 · 方式 C」 |
 | 官方包用 `peerDependencies` | ✅ | `@deepseek-ai/schemastery` 已在 `peerDependencies` + `devDependencies` |
 
 **提交流程**：fork → 把 `docs/dsh-market-entry.yml` 复制成 `data/plugins/wlllyj__dsh-prompt-forge.yml` → 提 PR（一次 PR 最多 3 条）→ CI 会依次检查 `dsh.bundle`、仓库年龄、awesome-lint 与站点构建 → 合并后市场自动同步（通常一天内）。
@@ -297,6 +297,7 @@ tarball: https://github.com/wlllyj/dsh-prompt-forge/releases/download/v0.10.0/ds
 ## 已知限制
 
 - 篇幅与条目数是软约束：机器复查只纠一次，模型仍可能略超标。
+- 面板高度跟着内容自适应：标题与底部按钮固定，结果列表最多占视口 40%，更长的结果在列表内部滚动。
 - 改写质量取决于当前对话所用模型；本插件不做模型适配。
 - 设置只有一个入口（面板的设置页签）；本 DSH 版本的插件列表页是只读的，不提供配置表单。
 - 规则文件是中文写的，英文场景的产出语言尚未稳定。
