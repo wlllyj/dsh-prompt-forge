@@ -8,13 +8,11 @@ import { fileURLToPath } from 'node:url'
 import {
   BUILTIN_DOCTRINE,
   Config,
-  TOOL_NAME,
   UNKNOWNS_DOCTRINE,
   applyModelOverride,
   budgetInstruction,
   buildDoctrine,
   buildSystem,
-  buildTool,
   callModel,
   cleanRewrite,
   complexityBudget,
@@ -23,8 +21,12 @@ import {
   loadDoctrine,
   readConfig,
   reviewRewrite,
+  reviewUnknowns,
   splitItems,
   splitSections,
+  unknownsBudget,
+  unknownsCorrection,
+  unknownsInstruction,
 } from '../index.js'
 
 const route = { provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'high' }
@@ -101,10 +103,12 @@ test('buildSystem serves the rewrite or the unknowns doctrine', () => {
   assert.match(withRules, /英文输出/u)
 })
 
-test('the unknowns doctrine asks for a numbered list and no rewrite', () => {
-  assert.match(UNKNOWNS_DOCTRINE, /3–5 条/u)
+test('the unknowns doctrine asks for a short unnumbered list and no rewrite', () => {
+  assert.match(UNKNOWNS_DOCTRINE, /没有那么多未知就少写几条/u)
+  assert.match(UNKNOWNS_DOCTRINE, /不写解释/u)
   assert.match(UNKNOWNS_DOCTRINE, /不改写原文/u)
   assert.match(UNKNOWNS_DOCTRINE, /不要代码围栏/u)
+  assert.doesNotMatch(UNKNOWNS_DOCTRINE, /3–5 条/u, 'the count now comes from the budget, not a fixed range')
 })
 
 test('readConfig reads a volatile ref', () => {
@@ -137,22 +141,6 @@ test('cleanRewrite strips fences and label lines', () => {
   assert.equal(cleanRewrite('```text\n目标：X\n```'), '目标：X')
   assert.equal(cleanRewrite('改写后的提示词：目标：X'), '目标：X')
   assert.equal(cleanRewrite('  目标：X  '), '目标：X')
-})
-
-test('buildTool exposes the tool name, schema, and a reject path', async () => {
-  const tool = buildTool({ get: () => undefined }, Config({}))
-  assert.equal(tool.name, TOOL_NAME)
-  assert.equal(tool.name, 'prompt_forge_optimize')
-  assert.deepEqual(tool.parameters.required, ['prompt'])
-  assert.deepEqual(tool.parameters.properties.mode.enum, ['prompt', 'unknowns'])
-  assert.deepEqual(tool.output.render(undefined, { ok: true }), [{ type: 'text', text: '{"ok":true}' }])
-
-  const empty = await tool.execute({ prompt: '  ' }, { signal: undefined })
-  assert.deepEqual(empty, { ok: false, code: 'empty-prompt', message: 'prompt must be a non-empty string' })
-
-  const noModel = await tool.execute({ prompt: '写个周报' }, { signal: undefined })
-  assert.equal(noModel.ok, false)
-  assert.equal(noModel.code, 'no-llm')
 })
 
 test('splitSections turns each Markdown heading into its own row', () => {
@@ -302,4 +290,87 @@ test('callModel leaves an acceptable rewrite alone', async () => {
   const result = await callModel(ctx, { mode: 'prompt', config: Config({}), text: '把会议记录整理成三条待办。' })
   assert.equal(result.text, tight)
   assert.equal(calls, 1)
+})
+
+test('unknownsBudget shrinks the list for small tasks', () => {
+  const tiny = unknownsBudget('把这段会议记录整理成三条待办，明天发群里。')
+  assert.equal(tiny.tier, 'tiny')
+  assert.equal(tiny.maxItems, 2)
+  assert.equal(tiny.maxChars, 70)
+  assert.equal(tiny.maxItemChars, 28)
+
+  const normal = unknownsBudget('x'.repeat(200))
+  assert.equal(normal.tier, 'normal')
+  assert.equal(normal.maxItems, 5)
+
+  const large = unknownsBudget('x'.repeat(800))
+  assert.equal(large.tier, 'large')
+  assert.equal(large.maxItems, 6)
+})
+
+test('unknownsInstruction states the count and the sizes', () => {
+  assert.match(unknownsInstruction(unknownsBudget('短活')), /最多 2 条、整份不超过 70 字、每条不超过 28 字/u)
+})
+
+test('reviewUnknowns catches padding, verbosity and explanations', () => {
+  const budget = unknownsBudget('把这段会议记录整理成三条待办，明天发群里。')
+  const padded = [
+    '1. 会议记录原文在哪里？——不知道原文就没法整理。',
+    '2. 三条待办要分配给谁？——不知道负责人就没法分配。',
+    '3. 要发到哪个群？——不知道群名就发不出去。',
+  ].join('\n\n')
+  const issues = reviewUnknowns(padded, budget)
+  assert.ok(issues.includes('too-many-items'), 'three questions over a two-question budget')
+  assert.ok(issues.includes('has-explanation'), 'the —— explanations are flagged')
+
+  const wordy = ['1. 会议记录原文在哪里？', '2. 这三条待办分别要交给哪一位同事、按什么顺序做、做完由谁验收、如果对方没空又该由谁接手，请一并写清楚？'].join('\n\n')
+  assert.ok(reviewUnknowns(wordy, budget).includes('item-too-long'), 'a single question over the line length is flagged')
+
+  const clean = ['1. 会议记录原文在哪里？', '2. 三条待办分别交给谁？'].join('\n\n')
+  assert.deepEqual(reviewUnknowns(clean, budget), [])
+})
+
+test('reviewUnknowns flags a list that is far longer than its budget', () => {
+  const budget = unknownsBudget('短活')
+  assert.ok(reviewUnknowns(`1. ${'很长的问句'.repeat(20)}？`, budget).includes('too-long'))
+})
+
+test('unknownsCorrection names every issue it was given', () => {
+  const text = unknownsCorrection(['too-many-items', 'has-explanation'], unknownsBudget('短活'))
+  assert.match(text, /最多 2 条/u)
+  assert.match(text, /只写问句/u)
+})
+
+test('callModel retries once when the unknowns list is padded', async () => {
+  const draft = '把这段会议记录整理成三条待办，明天发群里。'
+  const padded = [
+    '1. 会议记录原文在哪里？——不知道原文就没法整理。',
+    '2. 三条待办要分配给谁？——不知道负责人就没法分配。',
+    '3. 要发到哪个群？——不知道群名就发不出去。',
+  ].join('\n\n')
+  const clean = ['1. 会议记录原文在哪里？', '2. 三条待办分别交给谁？'].join('\n\n')
+  const systems = []
+  const llm = {
+    listProviders: () => [],
+    stream(options) {
+      const answer = systems.length === 0 ? padded : clean
+      systems.push(options.system)
+      return (async function* () {
+        yield { type: 'text-delta', index: 0, text: answer }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      })()
+    },
+  }
+  const ctx = {
+    get: (name) => {
+      if (name === 'llm') return llm
+      if (name === 'agentDefaultModel') return { currentSelection: () => route }
+      return undefined
+    },
+  }
+  const result = await callModel(ctx, { mode: 'unknowns', config: Config({}), text: draft })
+  assert.equal(result.text, clean, 'the corrective pass replaces the padded list')
+  assert.equal(systems.length, 2, 'exactly one corrective pass')
+  assert.match(systems[0], /条数预算/u)
+  assert.match(systems[1], /重写要求/u)
 })

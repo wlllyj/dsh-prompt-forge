@@ -1,8 +1,9 @@
 /**
  * Prompt Forge — host half.
  *
- * Two JSON endpoints for the composer buttons (rewrite the draft / list the
- * unknowns), plus one model-facing tool so an agent can call the same rewrite.
+ * Two JSON endpoints for the one composer button (rewrite the draft / list the
+ * unknowns). The plugin is user-invoked only: nothing here is exposed to a
+ * model, so an agent never calls it on its own.
  * The doctrine itself lives in ./doctrine.md so a team can edit it without
  * touching code; `BUILTIN_DOCTRINE` is the fallback when that file is missing.
  */
@@ -56,9 +57,6 @@ const MAX_PROMPT_CHARS = 20_000
 /** One rewrite call may not outlive this. */
 const CALL_TIMEOUT_MS = 120_000
 
-/** The model-facing tool this bundle registers. */
-export const TOOL_NAME = 'prompt_forge_optimize'
-
 /** This package's own directory, so the doctrine file resolves under any cwd. */
 const PACKAGE_DIR = path.dirname(fileURLToPath(import.meta.url))
 
@@ -93,15 +91,15 @@ export const ASK_FIRST_ON = `## 「未知」怎么写（先问再答：开）
 export const ASK_FIRST_OFF = `## 「未知」怎么写（先问再答：关）
 不要要求对方先提问。改为在「未知与待确认」一节里写出「我据此推断的前提」与「仍需要你确认的点」，各 1–3 条。`
 
-/** System prompt of the unknowns-only mode (the second composer pill). */
+/** System prompt of the unknowns-only mode (the second tab of the panel). */
 export const UNKNOWNS_DOCTRINE = `你是「AI 使用心法」的未知审查员。用户给你一段他想交给 AI 做的任务或提示词。
 
 你的任务：只列出未知，不改写原文、不评价好坏、不替用户回答。
 要求：
-- 3–5 条，每条都是「内行必问、外行想不到」的问题，覆盖目标、素材与边界、验收标准、口味取舍、风险与代价。
-- 每条写成一个问句，后面用一句话说明为什么这是未知（不知道它会怎样改变结果）。
-- 不要重复原文已经写明的信息；不要凑数。
-- 中文输出，只输出编号列表：\`1. 问题？——为什么\`，不要前言、不要总结、不要代码围栏。`
+- 每条都是「内行必问、外行想不到」的问题，覆盖目标、素材与边界、验收标准、口味取舍、风险与代价。
+- 一条只写一个问句：不写解释、不写建议、不写「为什么」。
+- 不要重复原文已经写明的信息；没有那么多未知就少写几条，绝不凑数。
+- 中文输出，只输出编号列表、一行一条：\`1. 问题？\`。不要前言、不要总结、不要代码围栏。`
 
 /**
  * Compose the system prompt for one rewrite.
@@ -405,6 +403,66 @@ export function correctionInstruction(issues, budget) {
 }
 
 /**
+ * How many unknowns a draft deserves: the same tiers the rewrite uses, so a
+ * one-line errand gets two questions instead of five padded ones.
+ * @param {string} draft the original prompt.
+ * @returns {{ tier: 'tiny' | 'small' | 'normal' | 'large', maxItems: number, maxChars: number, maxItemChars: number }} the budget.
+ */
+export function unknownsBudget(draft) {
+  const { tier } = complexityBudget(draft)
+  if (tier === 'tiny') return { tier, maxItems: 2, maxChars: 70, maxItemChars: 28 }
+  if (tier === 'small') return { tier, maxItems: 3, maxChars: 120, maxItemChars: 32 }
+  if (tier === 'normal') return { tier, maxItems: 5, maxChars: 260, maxItemChars: 42 }
+  return { tier, maxItems: 6, maxChars: 420, maxItemChars: 60 }
+}
+
+/**
+ * The count line handed to the model for the unknowns mode.
+ * @param {ReturnType<typeof unknownsBudget>} budget the budget.
+ * @returns {string} the instruction.
+ */
+export function unknownsInstruction(budget) {
+  return `这一份最多 ${budget.maxItems} 条、整份不超过 ${budget.maxChars} 字、每条不超过 ${budget.maxItemChars} 字。按重要性排序：最可能改变结果的那个未知放第一条。宁可少写一条，也不要凑数。`
+}
+
+/**
+ * Check an unknowns list against its budget: too many questions, too wordy, or
+ * an explanation that the doctrine asked it to drop.
+ * @param {string} text the model's list.
+ * @param {ReturnType<typeof unknownsBudget>} budget the budget it was asked to hit.
+ * @returns {string[]} issue codes; empty means acceptable.
+ */
+export function reviewUnknowns(text, budget) {
+  const rows = splitItems(text)
+  const issues = []
+  if (rows.length > budget.maxItems) issues.push('too-many-items')
+  if (String(text ?? '').trim().length > Math.round(budget.maxChars * 1.3)) issues.push('too-long')
+  const longest = rows.reduce((max, row) => Math.max(max, row.body.replace(NOISE, '').length), 0)
+  if (longest > budget.maxItemChars + 10) issues.push('item-too-long')
+  if (rows.some((row) => /——|--|因为|之所以/u.test(row.body))) issues.push('has-explanation')
+  return [...new Set(issues)]
+}
+
+/** How each unknowns issue is explained back to the model on the retry. */
+const UNKNOWNS_ISSUE_TEXT = {
+  'too-many-items': (budget) => `条数超了：最多 ${budget.maxItems} 条，删掉最外围的问题，只留最可能改变结果的那几条。`,
+  'too-long': (budget) => `太长：整份压到 ${budget.maxChars} 字以内。`,
+  'item-too-long': (budget) => `单条太长：每条不超过 ${budget.maxItemChars} 字，只留问句本身。`,
+  'has-explanation': () => '不要写「——为什么」这类解释，只写问句。',
+}
+
+/**
+ * The corrective paragraph appended on the unknowns retry.
+ * @param {string[]} issues issue codes from {@link reviewUnknowns}.
+ * @param {ReturnType<typeof unknownsBudget>} budget the budget.
+ * @returns {string} the instruction.
+ */
+export function unknownsCorrection(issues, budget) {
+  const lines = issues.map((issue) => `- ${UNKNOWNS_ISSUE_TEXT[issue]?.(budget) ?? issue}`)
+  return `上一次输出不合格，按下面几条重写一遍：\n${lines.join('\n')}\n仍然只输出编号列表，一行一条问句。`
+}
+
+/**
  * Pick the route/model for the call: the profile default, else the first
  * registered provider and its first model.
  * @param {any} llm the llm service.
@@ -481,9 +539,24 @@ export async function callModel(ctx, input) {
   }
 
   const system = buildSystem(input.mode, knobs)
-  if (input.mode !== 'prompt') {
-    const answer = await completeOnce(llm, route, system, knobs.temperature, input)
-    return { text: answer, provider: route.provider, model: route.model }
+  if (input.mode === 'unknowns') {
+    // Same discipline as the rewrite: a shrink budget by draft size, then one
+    // corrective pass when the list is padded or wordy.
+    const budget = unknownsBudget(input.text)
+    const prompted = `${system}\n\n## 这一份的条数预算\n${unknownsInstruction(budget)}`
+    const answer = await completeOnce(llm, route, prompted, knobs.temperature, input)
+    const issues = reviewUnknowns(answer, budget)
+    if (issues.length === 0) return { text: answer, provider: route.provider, model: route.model }
+
+    const retried = await completeOnce(
+      llm,
+      route,
+      `${prompted}\n\n## 重写要求\n${unknownsCorrection(issues, budget)}`,
+      0.2,
+      input,
+    )
+    const chosen = reviewUnknowns(retried, budget).length <= issues.length ? retried : answer
+    return { text: chosen, provider: route.provider, model: route.model }
   }
 
   // A rewrite is checked against the budget of the draft it came from; one
@@ -645,64 +718,7 @@ function registerEndpoint(ctx, spec) {
 }
 
 /**
- * The model-facing tool: the same rewrite the composer button does, callable by
- * an agent through the normal tool pipeline.
- * @param {any} ctx host context.
- * @param {any} config the plugin config (volatile refs).
- * @returns {import('@deepseek-ai/dsh-tools').ToolDefinition} the definition.
- */
-export function buildTool(ctx, config) {
-  return {
-    name: TOOL_NAME,
-    description: [
-      'Rewrite a prompt by the AI-usage doctrine: every instruction becomes an externally verifiable acceptance criterion,',
-      'unknowns are surfaced before the work starts, and the output is structured for a model to follow.',
-      'mode "prompt" returns the rewritten prompt; mode "unknowns" returns only the 3-5 blind-spot questions an expert',
-      'would ask first, without rewriting. Use it when the user wants a prompt improved or stress-tested before sending it.',
-    ].join(' '),
-    parameters: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        prompt: {
-          type: 'string',
-          description: 'The original prompt or task description to work on (verbatim from the user).',
-        },
-        mode: {
-          type: 'string',
-          enum: ['prompt', 'unknowns'],
-          description: 'prompt = full rewrite (default); unknowns = only the blind-spot question list.',
-        },
-      },
-      required: ['prompt'],
-    },
-    output: {
-      schema: { type: 'object', additionalProperties: true },
-      render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
-    },
-    timeoutMs: CALL_TIMEOUT_MS + 10_000,
-    async execute(args, exec) {
-      const input = typeof args === 'object' && args !== null ? args : {}
-      const text = typeof input.prompt === 'string' ? input.prompt : ''
-      if (text.trim() === '') {
-        return { ok: false, code: 'empty-prompt', message: 'prompt must be a non-empty string' }
-      }
-      if (text.length > MAX_PROMPT_CHARS) {
-        return { ok: false, code: 'prompt-too-long', message: `prompt is longer than ${MAX_PROMPT_CHARS} characters` }
-      }
-      const mode = input.mode === 'unknowns' ? 'unknowns' : 'prompt'
-      try {
-        const answer = await callModel(ctx, { mode, config, text, signal: exec.signal })
-        return { ok: true, mode, text: answer.text, provider: answer.provider, model: answer.model }
-      } catch (error) {
-        return { ok: false, code: String(error?.code ?? 'internal'), message: String(error?.message ?? error) }
-      }
-    },
-  }
-}
-
-/**
- * Mount the endpoints and the tool.
+ * Mount the two endpoints.
  * @param {import('@deepseek-ai/dsh-core').Context} ctx host context.
  * @param {any} config the validated plugin config (volatile refs).
  */
@@ -728,8 +744,6 @@ export function apply(ctx, config) {
     config,
   })
   ctx.effect(() => () => { disposeUnknowns() }, 'dsh-prompt-forge: route unknowns')
-
-  ctx.effect(() => ctx.tools.register(buildTool(ctx, config)), 'dsh-prompt-forge: prompt_forge_optimize tool')
 }
 
-export const inject = ['webServer', 'tools']
+export const inject = ['webServer']
