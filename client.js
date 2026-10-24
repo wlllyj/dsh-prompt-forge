@@ -735,13 +735,28 @@ window.__ModuleLoader__.load({
             border: '1px solid var(--dsw-alias-border-l1)',
             borderRadius: '10px',
             background: 'var(--dsw-alias-bg-layer-1)',
-            maxHeight: '28vh',
-            overflow: 'auto',
+            maxHeight: 'min(56vh, 520px)',
+            overflow: 'hidden',
           },
         },
         header,
         hint,
-        body,
+        h(
+          'div',
+          {
+            'data-prompt-forge': 'scroll',
+            style: {
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              flex: '1 1 auto',
+              minHeight: '0',
+              overflowY: 'auto',
+              overscrollBehavior: 'contain',
+            },
+          },
+          body,
+        ),
         footer,
       )
     }

@@ -91,8 +91,8 @@ pnpm pack      # 生成 dsh-prompt-forge-<version>.tgz
 每次发版都会把打好包的 tgz 挂在 GitHub Release 上：
 
 ```sh
-curl -L -o dsh-prompt-forge-0.9.3.tgz \
-  https://github.com/wlllyj/dsh-prompt-forge/releases/download/v0.9.3/dsh-prompt-forge-0.9.3.tgz
+curl -L -o dsh-prompt-forge-0.9.4.tgz \
+  https://github.com/wlllyj/dsh-prompt-forge/releases/download/v0.9.4/dsh-prompt-forge-0.9.4.tgz
 ```
 
 把下载到的 `.tgz` 路径交给 `plugin_manager install_bundle`，然后刷新页面。
@@ -271,7 +271,7 @@ description:
   en: "Adds one Prompt button beside the composer that rewrites the draft with an editable prompt-engineering doctrine, lists the unknowns it hides, and edits the plugin's own settings in place, returning results as pickable rows instead of overwriting the draft."
   zh: "在输入框旁加一个 ✦ Prompt 按钮：按可替换的提示词心法改写草稿、列出草稿里被忽略的未知，并在面板里直接改插件设置，结果按行返回而不是直接覆盖草稿。"
 icon: https://raw.githubusercontent.com/wlllyj/dsh-prompt-forge/main/docs/icon-180.png
-tarball: https://github.com/wlllyj/dsh-prompt-forge/releases/download/v0.9.3/dsh-prompt-forge-0.9.3.tgz
+tarball: https://github.com/wlllyj/dsh-prompt-forge/releases/download/v0.9.4/dsh-prompt-forge-0.9.4.tgz
 ```
 
 **上架所需信息 → README 位置对照**
@@ -288,7 +288,7 @@ tarball: https://github.com/wlllyj/dsh-prompt-forge/releases/download/v0.9.3/dsh
 | 图标（GitHub 托管方形位图，约 96px） | ✅ `docs/icon-180.png`（由图内 `icon.svg` 渲染） | 见上方 yml 的 `icon:` |
 | 截图（1–8 张，相对路径） | ✅ `screenshots.json` 声明三张 | `docs/screenshots/` |
 | npm 发布（可选） | 未发布，改用下一条 | `package.json` 的 `repository` |
-| 预构建 tgz（可选） | ✅ GitHub Release `v0.9.3` 附带 tgz | 见上方 yml 的 `tarball:` 与「安装 · 方式 C」 |
+| 预构建 tgz（可选） | ✅ GitHub Release `v0.9.4` 附带 tgz | 见上方 yml 的 `tarball:` 与「安装 · 方式 C」 |
 | 官方包用 `peerDependencies` | ✅ | `@deepseek-ai/schemastery` 已在 `peerDependencies` + `devDependencies` |
 
 **提交流程**：fork → 把 `docs/dsh-market-entry.yml` 复制成 `data/plugins/wlllyj__dsh-prompt-forge.yml` → 提 PR（一次 PR 最多 3 条）→ CI 会依次检查 `dsh.bundle`、仓库年龄、awesome-lint 与站点构建 → 合并后市场自动同步（通常一天内）。
