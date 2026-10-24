@@ -23,12 +23,10 @@ window.__ModuleLoader__.load({
     const CONFIG_ENDPOINT = 'promptforge/config'
     /** The tabs, in display order. */
     const TABS = ['prompt', 'unknowns', 'settings']
-    /** The settings form's fields, in display order. */
+    /** The settings form's fields, in display order (model follows the chat, not a field). */
     const FIELDS = [
-      { name: 'model', kind: 'text', placeholder: 'settings.modelPlaceholder' },
       { name: 'temperature', kind: 'number', hint: 'settings.temperatureHint' },
       { name: 'askFirst', kind: 'checkbox', hint: 'settings.askFirstHint' },
-      { name: 'extraRules', kind: 'textarea', placeholder: 'settings.extraRulesPlaceholder' },
       { name: 'doctrinePath', kind: 'text', placeholder: 'settings.doctrinePathPlaceholder' },
     ]
 
@@ -59,14 +57,11 @@ window.__ModuleLoader__.load({
       'settings.loadFailed': '读取配置失败',
       'settings.saveFailed': '保存失败',
       'settings.saved': '已保存',
-      'settings.model': '模型',
-      'settings.modelPlaceholder': '留空 = 跟随 profile 默认模型，可写 provider/model',
+      'settings.modelNote': '模型：跟随当前对话，不单独设置',
       'settings.temperature': '温度',
-      'settings.temperatureHint': '0–2，越低越贴原文，越高越敢改结构',
+      'settings.temperatureHint': '0–2，越低越贴原文，越高越敢改结构，默认 0.8',
       'settings.askFirst': '先问再答',
       'settings.askFirstHint': '改写稿里加入「先提出三个内行必问的问题」的开场',
-      'settings.extraRules': '追加规则',
-      'settings.extraRulesPlaceholder': '追加到改写规则末尾的要求，可留空',
       'settings.doctrinePath': '规则文件',
       'settings.doctrinePathPlaceholder': '自定义规则文件路径，留空用插件自带的 doctrine.md',
       'action.save': '保存',
@@ -101,14 +96,11 @@ window.__ModuleLoader__.load({
       'settings.loadFailed': 'Could not read the settings',
       'settings.saveFailed': 'Could not save',
       'settings.saved': 'Saved',
-      'settings.model': 'Model',
-      'settings.modelPlaceholder': 'Empty = the profile default; provider/model also works',
+      'settings.modelNote': 'Model: follows this conversation, not configurable',
       'settings.temperature': 'Temperature',
-      'settings.temperatureHint': '0–2: lower stays close to the draft, higher reshapes it',
+      'settings.temperatureHint': '0–2: lower stays close to the draft, higher reshapes it; default 0.8',
       'settings.askFirst': 'Ask first',
       'settings.askFirstHint': 'Open the rewrite with three insider questions to answer first',
-      'settings.extraRules': 'Extra rules',
-      'settings.extraRulesPlaceholder': 'Appended to the doctrine, may stay empty',
       'settings.doctrinePath': 'Doctrine file',
       'settings.doctrinePathPlaceholder': 'Custom rules file; empty uses the bundled doctrine.md',
       'action.save': 'Save',
@@ -208,7 +200,7 @@ window.__ModuleLoader__.load({
     /** The pill and the panel are two slot entries, so they share this store. */
     const emptyBucket = () => ({ status: 'idle', parts: [], selected: [], error: '' })
     /** The settings the Host ships with; the form starts from these. */
-    const EMPTY_CONFIG = { model: '', temperature: 0.35, askFirst: true, extraRules: '', doctrinePath: '' }
+    const EMPTY_CONFIG = { temperature: 0.8, askFirst: true, doctrinePath: '' }
     const emptySettings = () => ({
       status: 'idle',
       values: EMPTY_CONFIG,
@@ -585,6 +577,11 @@ window.__ModuleLoader__.load({
             : h(
               'div',
               { style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
+              h(
+                'div',
+                { style: { fontSize: '11px', color: 'var(--dsw-alias-label-secondary)' } },
+                t('settings.modelNote'),
+              ),
               ...fields,
               settings.error !== ''
                 ? h(

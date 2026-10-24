@@ -16,27 +16,17 @@ import z from '@deepseek-ai/schemastery'
 
 /** The settings form the plugin row renders: every field is live (volatile). */
 export const Config = z.object({
-  model: z
-    .string()
-    .default('')
-    .description('改写用的模型：留空跟随 profile 默认模型；也可写成 provider/model')
-    .volatile(),
   temperature: z
     .number()
     .min(0)
     .max(2)
-    .default(0.35)
+    .default(0.8)
     .description('改写温度：越低越贴原文，越高越敢改结构')
     .volatile(),
   askFirst: z
     .boolean()
     .default(true)
     .description('先问再答：改写稿里是否包含「先提出三个内行必问的问题，只问不答」的开场')
-    .volatile(),
-  extraRules: z
-    .string()
-    .default('')
-    .description('追加到改写规则末尾的额外要求（可留空）')
     .volatile(),
   doctrinePath: z
     .string()
@@ -56,6 +46,9 @@ const MAX_PROMPT_CHARS = 20_000
 
 /** One rewrite call may not outlive this. */
 const CALL_TIMEOUT_MS = 120_000
+
+/** The temperature a fresh install starts with. */
+export const DEFAULT_TEMPERATURE = 0.8
 
 /** This package's own directory, so the doctrine file resolves under any cwd. */
 const PACKAGE_DIR = path.dirname(fileURLToPath(import.meta.url))
@@ -144,22 +137,6 @@ export function readConfig(field, fallback) {
     return value === undefined ? fallback : value
   }
   return field === undefined ? fallback : field
-}
-
-/**
- * Apply the configured model override to the resolved route.
- * @param {{ provider: string, model: string, reasoningEffort?: string }} route the profile default.
- * @param {string} override `model` or `provider/model`.
- * @returns {{ provider: string, model: string, reasoningEffort?: string }} the route to call.
- */
-export function applyModelOverride(route, override) {
-  const text = typeof override === 'string' ? override.trim() : ''
-  if (text === '') return route
-  const slash = text.indexOf('/')
-  if (slash > 0) {
-    return { provider: text.slice(0, slash), model: text.slice(slash + 1) }
-  }
-  return { ...route, model: text }
 }
 
 /**
@@ -486,16 +463,14 @@ async function resolveRoute(llm, agentDefaultModel) {
 /**
  * Read every knob the two modes share.
  * @param {any} config the validated plugin config (volatile refs).
- * @returns {{ askFirst: boolean, temperature: number, extraRules: string, doctrinePath: string, model: string }} the knobs.
+ * @returns {{ askFirst: boolean, temperature: number, doctrinePath: string }} the knobs.
  */
 function readKnobs(config) {
-  const rawTemperature = Number(readConfig(config?.temperature, 0.35))
+  const rawTemperature = Number(readConfig(config?.temperature, DEFAULT_TEMPERATURE))
   return {
     askFirst: readConfig(config?.askFirst, true) !== false,
-    temperature: Number.isFinite(rawTemperature) ? Math.min(2, Math.max(0, rawTemperature)) : 0.35,
-    extraRules: String(readConfig(config?.extraRules, '') ?? '').trim(),
+    temperature: Number.isFinite(rawTemperature) ? Math.min(2, Math.max(0, rawTemperature)) : DEFAULT_TEMPERATURE,
     doctrinePath: String(readConfig(config?.doctrinePath, '') ?? '').trim(),
-    model: String(readConfig(config?.model, '') ?? '').trim(),
   }
 }
 
@@ -504,31 +479,28 @@ export const PACKAGE_NAME = 'dsh-prompt-forge'
 
 /** The defaults of the Config schema, so the panel can offer "restore default". */
 export const CONFIG_DEFAULTS = {
-  model: '',
-  temperature: 0.35,
+  temperature: DEFAULT_TEMPERATURE,
   askFirst: true,
-  extraRules: '',
   doctrinePath: '',
 }
 
 /**
  * Project the live config into the settings form the panel renders.
  * @param {any} config the validated plugin config (volatile refs).
- * @returns {{ model: string, temperature: number, askFirst: boolean, extraRules: string, doctrinePath: string }} the current values.
+ * @returns {{ temperature: number, askFirst: boolean, doctrinePath: string }} the current values.
  */
 export function configValues(config) {
   const knobs = readKnobs(config)
   return {
-    model: knobs.model,
     temperature: knobs.temperature,
     askFirst: knobs.askFirst,
-    extraRules: knobs.extraRules,
     doctrinePath: knobs.doctrinePath,
   }
 }
 
 /**
- * Validate one settings submission from the panel. Unknown keys are ignored.
+ * Validate one settings submission from the panel. Unknown keys are ignored, so
+ * a field dropped from the schema (model, extraRules) is silently discarded.
  * @param {unknown} input the posted object.
  * @returns {{ patch: Record<string, unknown>, errors: string[] }} accepted fields and the rejected ones.
  */
@@ -538,10 +510,6 @@ export function normalizeConfigInput(input) {
   }
   const errors = []
   const patch = {}
-  if (Object.hasOwn(input, 'model')) {
-    if (typeof input.model !== 'string') errors.push('model')
-    else patch.model = input.model.trim()
-  }
   if (Object.hasOwn(input, 'temperature')) {
     const value = Number(input.temperature)
     if (!Number.isFinite(value)) errors.push('temperature')
@@ -551,10 +519,6 @@ export function normalizeConfigInput(input) {
     if (typeof input.askFirst !== 'boolean') errors.push('askFirst')
     else patch.askFirst = input.askFirst
   }
-  if (Object.hasOwn(input, 'extraRules')) {
-    if (typeof input.extraRules !== 'string') errors.push('extraRules')
-    else patch.extraRules = input.extraRules
-  }
   if (Object.hasOwn(input, 'doctrinePath')) {
     if (typeof input.doctrinePath !== 'string') errors.push('doctrinePath')
     else patch.doctrinePath = input.doctrinePath.trim()
@@ -563,25 +527,30 @@ export function normalizeConfigInput(input) {
 }
 
 /**
- * Append the user's extra rules to a base system prompt.
- * @param {string} base base system prompt.
- * @param {string} extraRules user rules (may be empty).
- * @returns {string} the composed system prompt.
+ * Keep only the fields the schema still declares, so a stale key from an older
+ * profile config never reaches the new schema.
+ * @param {Record<string, unknown>} value any config object.
+ * @returns {Record<string, unknown>} the same object, filtered.
  */
-export function composeSystem(base, extraRules) {
-  const extra = typeof extraRules === 'string' ? extraRules.trim() : ''
-  return extra === '' ? base : `${base}\n\n## 用户追加要求（同等优先）\n${extra}`
+export function pickConfigKeys(value) {
+  const picked = {}
+  if (value !== null && typeof value === 'object') {
+    for (const key of Object.keys(CONFIG_DEFAULTS)) {
+      if (Object.hasOwn(value, key)) picked[key] = value[key]
+    }
+  }
+  return picked
 }
 
 /**
  * Build the system prompt of one mode.
  * @param {'prompt' | 'unknowns'} mode which surface is being served.
- * @param {{ askFirst: boolean, extraRules: string, doctrinePath: string }} knobs the shared knobs.
+ * @param {{ askFirst: boolean, doctrinePath: string }} knobs the shared knobs.
  * @returns {string} the system prompt.
  */
 export function buildSystem(mode, knobs) {
-  if (mode === 'unknowns') return composeSystem(UNKNOWNS_DOCTRINE, knobs.extraRules)
-  return composeSystem(buildDoctrine(knobs.askFirst, loadDoctrine(knobs.doctrinePath)), knobs.extraRules)
+  if (mode === 'unknowns') return UNKNOWNS_DOCTRINE
+  return buildDoctrine(knobs.askFirst, loadDoctrine(knobs.doctrinePath))
 }
 
 /**
@@ -594,9 +563,11 @@ export async function callModel(ctx, input) {
   const llm = ctx.get('llm')
   if (llm === undefined) throw Object.assign(new Error('the llm service is not available'), { code: 'no-llm' })
   const knobs = readKnobs(input.config)
+  // The rewrite always rides the conversation's own model: there is no model
+  // setting, so the plugin can never drift from what the chat itself uses.
   let route
   try {
-    route = applyModelOverride(await resolveRoute(llm, ctx.get('agentDefaultModel')), knobs.model)
+    route = await resolveRoute(llm, ctx.get('agentDefaultModel'))
   } catch (error) {
     throw Object.assign(new Error(String(error?.message ?? error)), { code: String(error?.code ?? 'no-model') })
   }
@@ -859,7 +830,7 @@ function registerConfigEndpoints(ctx, spec) {
       }
 
       try {
-        await editor.edit(entry, (current, inherited) => ({ ...inherited, ...current, ...patch }))
+        await editor.edit(entry, (current, inherited) => pickConfigKeys({ ...inherited, ...current, ...patch }))
       } catch (error) {
         sendJson(res, 500, {
           ok: false,

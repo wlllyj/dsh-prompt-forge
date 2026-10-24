@@ -1,6 +1,6 @@
 # Prompt Forge（提示词工坊）
 
-给 DSH 的输入框加一个 `✦ Prompt` 按钮：点开一个面板，把你的草稿按「提示词心法」改写成能直接执行的提示词，或者先列出你没考虑到的未知。**改写结果不会自动覆盖草稿**——它按段/按条列出来，你勾选要用的部分，再决定「替换草稿」还是「追加到末尾」。面板里还有第三个页签「设置」，模型、温度、开关、规则文件都能在那里直接改，不用手编配置文件。
+给 DSH 的输入框加一个 `✦ Prompt` 按钮：点开一个面板，把你的草稿按「提示词心法」改写成能直接执行的提示词，或者先列出你没考虑到的未知。**改写结果不会自动覆盖草稿**——它按段/按条列出来，你勾选要用的部分，再决定「替换草稿」还是「追加到末尾」。面板里还有第三个页签「设置」，温度、先问再答、规则文件都能在那里直接改，不用手编配置文件；模型不单设，永远跟随当前对话。
 
 插件只在输入框里由你点按触发：它不向模型暴露任何工具，agent 不会替你调用它，也不会在你没要求时改你的草稿。
 
@@ -88,19 +88,19 @@ plugin_manager → action: install_bundle → target: <本目录的绝对路径>
 
 这个版本的 DSH 只有只读的插件列表，没有通用的「插件配置表单」页面，所以本插件把配置界面做进了自己的面板：`✦ Prompt` → 面板右上角 `设置`。
 
-表单里的五项就是下面这张表。点 `保存` 之后：
+表单里的三项就是下面这张表。点 `保存` 之后：
 
 1. 插件把自己的 Loader 条目改写成一条普通的配置覆盖（写进当前 profile 的 `cordis.patch.yml`，新增一行 `- id: prompt-forge / config: {...}`，下次启动也带着）；
 2. 所有字段都声明为 `volatile`，所以在运行中的插件上**立即生效**——不用重启应用，也不用刷新页面；
-3. 下次打开面板仍会读回当前值；点 `恢复默认` 直接把这五项写回默认值。
+3. 下次打开面板仍会读回当前值；点 `恢复默认` 直接把这写回默认值。
 
 | 字段 | 类型 / 默认值 | 作用 |
 | --- | --- | --- |
-| `model` | string / `''` | 生成用的模型。留空＝跟随 profile 默认模型；也可写 `provider/model` 或只写 `model` |
-| `temperature` | number / `0.35` | 温度。越低越贴原文，越高越敢重组结构 |
+| `temperature` | number / `0.8` | 温度。越低越贴原文，越高越敢重组结构 |
 | `askFirst` | boolean / `true` | 「先问再答」开关。关掉后不再要求对方先提问，改为在「未知与待确认」里写出「我据此推断的前提」与「仍需要你确认的点」各 1–3 条 |
-| `extraRules` | string / `''` | 追加到改写规则末尾的额外要求，例如团队自己的交付格式 |
 | `doctrinePath` | string / `''` | 自定义规则文件。留空＝用插件自带的 `doctrine.md`；可填绝对路径或相对插件目录的路径 |
+
+**模型没有设置项**：改写用的就是当前对话正在用的那个模型（宿主每次向 `agentDefaultModel.currentSelection()` 取），所以面板里那行「模型：跟随当前对话」是只读说明。这样插件不会和聊天用上不同的模型，也不会出现「设置里能改、但对话里改不了」的两套模型概念。
 
 保存走的是宿主 `configEditor` 服务，和 DSH 自己写配置是同一条路径：文件锁、原子写、写完触发 reconcile。若 profile 的这条配置被 home patch 或命令行 overlay 覆盖，保存会失败并在面板里显示原因——那种情况下要去改覆盖它的那一层。
 
@@ -123,8 +123,8 @@ plugin_manager → action: install_bundle → target: <本目录的绝对路径>
 
 // 设置：GET 读当前值，POST 写 { "config": { ... } }
 { "ok": true, "value": {
-  "values": { "model": "", "temperature": 0.35, "askFirst": true, "extraRules": "", "doctrinePath": "" },
-  "defaults": { "model": "", "temperature": 0.35, "askFirst": true, "extraRules": "", "doctrinePath": "" } } }
+  "values": { "temperature": 0.8, "askFirst": true, "doctrinePath": "" },
+  "defaults": { "temperature": 0.8, "askFirst": true, "doctrinePath": "" } } }
 
 // 失败
 { "ok": false, "error": { "code": "empty-draft", "message": "the draft is empty" } }
@@ -146,6 +146,8 @@ plugin_manager → action: install_bundle → target: <本目录的绝对路径>
 - **`conversation.input.left` 用自己的 id**：`kind: list`、`replaceRisk: none`，只会在旁边加一格，不会顶掉别的插件。
 - **Config 用 `@deepseek-ai/schemastery`**：与 DSH 设置页同一套 schema 体系；字段声明 `.volatile()` 才能进表单，并且写值直接提交到运行中的插件引用（不重挂载插件行）。
 - **配置界面做进面板，写值走宿主 `configEditor`**：这个版本的 DSH 没有通用插件配置表单，与其教用户手编 `cordis.patch.yml`，不如把表单放进面板；但写文件这件事不自己干——`configEditor` 自带文件锁、原子写、reconcile 与回滚，自己写 YAML 迟早和 Loader 打架。
+- **模型不给设置项**：设置项一旦能改模型，插件就会和聊天用上不同的模型，用户还得自己记住两套「模型」概念。改写的合理默认就是「和这段对话用同一个」，所以每次生成都向 `agentDefaultModel.currentSelection()` 取，设置里只留一行只读说明。
+- **没有「追加规则」字段**：想追加规则，直接往 `doctrine.md`（或 `doctrinePath` 指向的文件）里写就是同一个效果，而且能进版本库、能被 diff 审阅。两套入口只会让人猜「我的规则到底加在哪一层」。
 - **空答案重试一次**：推理型模型偶尔把预算全花在 reasoning 上、正文为空；`streamOnce` 会翻倍 `maxTokens` 并去掉 `reasoningEffort` 再试一次，避免面板里出现空白。
 - **规则外置成 `doctrine.md` 而不是写死在代码里**：改写标准属于团队知识，不属于代码；外置后改规则不用发版，也能被 diff 审阅。
 - **篇幅预算按草稿字数分档、由宿主算**：一句话的任务不该产出五百字。预算是代码算出来的硬数字，作为第一次调用末尾的「这一次的篇幅预算」交给模型；模型手感不可靠，数字可靠。
@@ -154,7 +156,7 @@ plugin_manager → action: install_bundle → target: <本目录的绝对路径>
 
 ## 验证记录
 
-- `node --test`：36 个用例全通过（两种「未知」段、规则文件加载与兜底、追加要求拼接、切段/切条、改写篇幅分档、未知条数分档、两份复查与纠正、模型覆盖、配置读写与校验等）。
+- `node --test`：34 个用例全通过（两种「未知」段、规则文件加载与兜底、切段/切条、改写篇幅分档、未知条数分档、两份复查与纠正、配置读写与校验、旧字段清理等）。
 - 篇幅实测（同一台机器、同一默认模型，改前 vs 改后）：
 
   | 草稿 | 改前（v0.4，固定五节） | 改后（v0.5） |
@@ -164,8 +166,8 @@ plugin_manager → action: install_bundle → target: <本目录的绝对路径>
   | 182 字：周报流程半自动化 | 667 字 / 4 节 | 304 字 / 3 节 |
 - `plugin_manager install_bundle` → `application: applied`、`enabled: true`、`warnings: []`。
 - 插槽实测：`conversation.input.left` 有 `prompt-forge`（order 1100），`conversation.input.dock` 有 `prompt-forge-panel`（order 130），均 `active`。
-- Config：`Config.listConfigs` 里该行 `status: "schema"`，五个字段都投影进设置表单。
-- 端到端：`/promptforge/optimize` 返回带 `parts` 的分节改写；`/promptforge/unknowns` 返回带 `parts` 的问句列表；`/promptforge/config` 的 GET 读回五字段、POST 写回后 profile 的 `cordis.patch.yml` 出现 `prompt-forge` 配置行，且立即生效（下一次生成即用新值）。
+- Config：`Config.listConfigs` 里该行 `status: "schema"`，三个字段都投影进设置表单（`temperature` 默认 `0.8`）。
+- 端到端：`/promptforge/optimize` 返回带 `parts` 的分节改写；`/promptforge/unknowns` 返回带 `parts` 的问句列表；`/promptforge/config` 的 GET 读回三个字段、POST 写回后 profile 的 `cordis.patch.yml` 出现 `prompt-forge` 配置行，且立即生效（下一次生成即用新值）；旧版留下的 `model` / `extraRules` 键在下次保存时被清掉（`pickConfigKeys`）。
 - 工具清单：`Tool.listTools` 里**没有** `prompt_forge_optimize`（v0.6 起不再暴露给模型）。
 
 ## 已知限制

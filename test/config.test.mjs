@@ -11,18 +11,17 @@ import {
   Config,
   PACKAGE_NAME,
   UNKNOWNS_DOCTRINE,
-  applyModelOverride,
   budgetInstruction,
   buildDoctrine,
   buildSystem,
   callModel,
   cleanRewrite,
   complexityBudget,
-  composeSystem,
   configValues,
   correctionInstruction,
   loadDoctrine,
   normalizeConfigInput,
+  pickConfigKeys,
   readConfig,
   reviewRewrite,
   reviewUnknowns,
@@ -86,14 +85,16 @@ test('loadDoctrine reads a custom path, absolute or relative', () => {
   }
 })
 
-test('composeSystem appends the user rules only when present', () => {
-  assert.equal(composeSystem('BASE', ''), 'BASE')
-  assert.equal(composeSystem('BASE', '  '), 'BASE')
-  assert.equal(composeSystem('BASE', 'RULES'), 'BASE\n\n## 用户追加要求（同等优先）\nRULES')
+test('pickConfigKeys drops keys the schema no longer declares', () => {
+  assert.deepEqual(pickConfigKeys({ temperature: 0.5, model: 'x', extraRules: 'y', askFirst: false }), {
+    temperature: 0.5,
+    askFirst: false,
+  })
+  assert.deepEqual(pickConfigKeys(null), {})
 })
 
 test('buildSystem serves the rewrite or the unknowns doctrine', () => {
-  const knobs = { askFirst: true, extraRules: '', doctrinePath: '' }
+  const knobs = { askFirst: true, doctrinePath: '' }
   const rewrite = buildSystem('prompt', knobs)
   assert.match(rewrite, /提示词改写器/u)
   assert.match(rewrite, /先问再答：开/u)
@@ -102,9 +103,6 @@ test('buildSystem serves the rewrite or the unknowns doctrine', () => {
   assert.match(unknowns, /未知审查员/u)
   assert.match(unknowns, /只列出未知/u)
   assert.doesNotMatch(unknowns, /提示词改写器/u)
-
-  const withRules = buildSystem('unknowns', { ...knobs, extraRules: '英文输出' })
-  assert.match(withRules, /英文输出/u)
 })
 
 test('the unknowns doctrine asks for a short unnumbered list and no rewrite', () => {
@@ -118,9 +116,7 @@ test('the unknowns doctrine asks for a short unnumbered list and no rewrite', ()
 test('readConfig reads a volatile ref', () => {
   const config = Config({})
   assert.equal(readConfig(config.askFirst, false), true)
-  assert.equal(readConfig(config.temperature, 0), 0.35)
-  assert.equal(readConfig(config.model, 'x'), '')
-  assert.equal(readConfig(config.extraRules, 'y'), '')
+  assert.equal(readConfig(config.temperature, 0), 0.8)
   assert.equal(readConfig(config.doctrinePath, 'z'), '')
 })
 
@@ -128,17 +124,6 @@ test('readConfig passes plain values and falls back when absent', () => {
   assert.equal(readConfig(false, true), false)
   assert.equal(readConfig('', 'fallback'), '')
   assert.equal(readConfig(undefined, 7), 7)
-})
-
-test('applyModelOverride keeps the route when the field is empty', () => {
-  assert.deepEqual(applyModelOverride(route, ''), route)
-  assert.deepEqual(applyModelOverride(route, '   '), route)
-  assert.deepEqual(applyModelOverride(route, undefined), route)
-})
-
-test('applyModelOverride swaps the model or the whole route', () => {
-  assert.deepEqual(applyModelOverride(route, 'glm-4.6'), { ...route, model: 'glm-4.6' })
-  assert.deepEqual(applyModelOverride(route, 'openai/gpt-5'), { provider: 'openai', model: 'gpt-5' })
 })
 
 test('cleanRewrite strips fences and label lines', () => {
@@ -381,43 +366,37 @@ test('callModel retries once when the unknowns list is padded', async () => {
 
 test('the settings defaults match the Config schema', () => {
   assert.equal(PACKAGE_NAME, 'dsh-prompt-forge')
-  assert.deepEqual(Object.keys(CONFIG_DEFAULTS).sort(), ['askFirst', 'doctrinePath', 'extraRules', 'model', 'temperature'])
-  assert.equal(CONFIG_DEFAULTS.temperature, 0.35)
+  assert.deepEqual(Object.keys(CONFIG_DEFAULTS).sort(), ['askFirst', 'doctrinePath', 'temperature'])
+  assert.equal(CONFIG_DEFAULTS.temperature, 0.8)
   assert.equal(CONFIG_DEFAULTS.askFirst, true)
   const shaped = Config({})
   assert.deepEqual(configValues(shaped), { ...CONFIG_DEFAULTS })
 })
 
 test('configValues reads volatile refs the same way the request path does', () => {
-  const config = Config({ model: 'deepseek-account/deepseek-pro', temperature: 1.1, askFirst: false })
+  const config = Config({ temperature: 1.1, askFirst: false })
   const values = configValues(config)
-  assert.equal(values.model, 'deepseek-account/deepseek-pro')
   assert.equal(values.temperature, 1.1)
   assert.equal(values.askFirst, false)
-  assert.equal(values.extraRules, '')
   assert.equal(values.doctrinePath, '')
 })
 
 test('normalizeConfigInput trims, clamps and rejects the wrong types', () => {
   const accepted = normalizeConfigInput({
-    model: '  deepseek-flash  ',
     temperature: 9,
     askFirst: false,
-    extraRules: '少用反问',
     doctrinePath: '  ./rules.md ',
     ignored: 'x',
   })
   assert.deepEqual(accepted.errors, [])
   assert.deepEqual(accepted.patch, {
-    model: 'deepseek-flash',
     temperature: 2,
     askFirst: false,
-    extraRules: '少用反问',
     doctrinePath: './rules.md',
   })
 
-  const rejected = normalizeConfigInput({ model: 1, temperature: 'hot', askFirst: 'yes', extraRules: null, doctrinePath: [] })
-  assert.deepEqual(rejected.errors.sort(), ['askFirst', 'doctrinePath', 'extraRules', 'model', 'temperature'])
+  const rejected = normalizeConfigInput({ temperature: 'hot', askFirst: 'yes', doctrinePath: [] })
+  assert.deepEqual(rejected.errors.sort(), ['askFirst', 'doctrinePath', 'temperature'])
   assert.deepEqual(rejected.patch, {})
 
   assert.deepEqual(normalizeConfigInput(null).errors, ['body'])
