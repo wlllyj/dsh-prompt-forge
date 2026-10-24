@@ -739,8 +739,12 @@ window.__ModuleLoader__.load({
             overflow: 'hidden',
           },
         },
-        header,
-        hint,
+        h(
+          'div',
+          { style: { display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 } },
+          header,
+          hint,
+        ),
         h(
           'div',
           {
@@ -757,7 +761,7 @@ window.__ModuleLoader__.load({
           },
           body,
         ),
-        footer,
+        h('div', { style: { flexShrink: 0 } }, footer),
       )
     }
 
