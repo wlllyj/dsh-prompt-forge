@@ -1,8 +1,8 @@
 {
   "name": "dsh-prompt-forge",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
-  "description": "Prompt Forge: rewrite the composer draft by the AI-usage doctrine, and toggle between the rewritten and the original prompt.",
+  "description": "Prompt Forge: rewrite the composer draft by the AI-usage doctrine, list the unknowns it hides, and toggle between the rewritten and the original prompt.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -24,6 +24,7 @@
   "files": [
     "index.js",
     "client.js",
+    "doctrine.md",
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg"
