@@ -9,6 +9,12 @@
 > [《更有野心》](https://felixrieseberg.com/how-to-be-more-ambitious-a-tutorial-for-humans-with-models/)（目标具体且难，别只求快）。
 > 规则放在仓库里的 [doctrine.md](doctrine.md)，可以整份替换成你团队的规范。
 
+![改写提示词：结果按行返回，勾选后自己决定替换还是追加](docs/screenshots/01-rewrite.png)
+
+| 未知清单 | 设置 |
+| --- | --- |
+| ![只列问句，不写解释](docs/screenshots/02-unknowns.png) | ![面板里直接改插件配置](docs/screenshots/03-settings.png) |
+
 ## 简介
 
 **它做什么**
@@ -79,6 +85,17 @@ pnpm pack      # 生成 dsh-prompt-forge-<version>.tgz
 ```
 
 把生成的 `.tgz` 路径交给 `plugin_manager install_bundle`，同样刷新页面。
+
+### 方式 C：直接装预构建的 tgz（不用装 Node/pnpm）
+
+每次发版都会把打好包的 tgz 挂在 GitHub Release 上：
+
+```sh
+curl -L -o dsh-prompt-forge-0.9.1.tgz \
+  https://github.com/wlllyj/dsh-prompt-forge/releases/download/v0.9.1/dsh-prompt-forge-0.9.1.tgz
+```
+
+把下载到的 `.tgz` 路径交给 `plugin_manager install_bundle`，然后刷新页面。
 
 ### 安装后自检
 
@@ -246,15 +263,17 @@ node --check index.js client.js
 data/plugins/wlllyj__dsh-prompt-forge.yml
 ```
 
-**yml 内容（模板）**：
+**yml 内容**：仓库里已经放了一份可直接复制的 [docs/dsh-market-entry.yml](docs/dsh-market-entry.yml)：
 
 ```yaml
 url: https://github.com/wlllyj/dsh-prompt-forge
 name: wlllyj/dsh-prompt-forge
 category: ui
 description:
-  en: "One button beside the composer rewrites the draft by an editable prompt-engineering doctrine, lists the unknowns it hides, and edits the plugin's settings in place; answers return as pickable rows."
-  zh: "输入框旁的 ✦ Prompt 按钮按可替换的提示词心法改写草稿、列出被忽略的未知，并在面板里直接改插件设置；结果按行返回，由你决定替换或追加。"
+  en: "Adds one Prompt button beside the composer that rewrites the draft with an editable prompt-engineering doctrine, lists the unknowns it hides, and edits the plugin's own settings in place, returning results as pickable rows instead of overwriting the draft."
+  zh: "在输入框旁加一个 ✦ Prompt 按钮：按可替换的提示词心法改写草稿、列出草稿里被忽略的未知，并在面板里直接改插件设置，结果按行返回而不是直接覆盖草稿。"
+icon: https://raw.githubusercontent.com/wlllyj/dsh-prompt-forge/main/docs/icon-180.png
+tarball: https://github.com/wlllyj/dsh-prompt-forge/releases/download/v0.9.1/dsh-prompt-forge-0.9.1.tgz
 ```
 
 **上架所需信息 → README 位置对照**
@@ -263,18 +282,20 @@ description:
 | --- | --- | --- |
 | 仓库 `package.json` 声明 `dsh.bundle` manifest | ✅ | `package.json` 的 `dsh.bundle.patch` → `cordis.patch.yml` |
 | 仓库有真实可用代码 | ✅ | `index.js`、`client.js` |
-| 仓库创建满 1 天 | 【待补】2026-10-25 之后可提交 | — |
-| GitHub 仓库加 `dsh-plugin` topic | 【待补】待设置 | — |
+| 仓库创建满 1 天 | 【待补】2026-10-25 之后才满足（CI 自动查，其余项已就绪） | — |
+| GitHub 仓库加 `dsh-plugin` topic | ✅ 已设置 topic | — |
 | `url` 与仓库地址一致 | ✅ | https://github.com/wlllyj/dsh-prompt-forge |
 | `category` 贴合 | ✅ `ui` | 本 README「简介」 |
 | `description.en` 属实、与代码一致 | ✅ | 本 README 一级标题下三行 + [简介](#简介) |
-| 图标（GitHub 托管方形位图） | 【待补】现有 `icon.svg` 需转 PNG | — |
-| 截图 | 【待补】`screenshots.json` 未声明，市场会从 README 抽图 | 本 README「用法」 |
-| npm 发布（可选） | 【待补】未发布；`repository` 字段已指回本仓库 | `package.json` |
-| 预构建 tgz（可选） | 【待补】可走 GitHub Release + `tarball:` | — |
+| 图标（GitHub 托管方形位图，约 96px） | ✅ `docs/icon-180.png`（由图内 `icon.svg` 渲染） | 见上方 yml 的 `icon:` |
+| 截图（1–8 张，相对路径） | ✅ `screenshots.json` 声明三张 | `docs/screenshots/` |
+| npm 发布（可选） | 未发布，改用下一条 | `package.json` 的 `repository` |
+| 预构建 tgz（可选） | ✅ GitHub Release `v0.9.1` 附带 tgz | 见上方 yml 的 `tarball:` 与「安装 · 方式 C」 |
 | 官方包用 `peerDependencies` | ✅ | `@deepseek-ai/schemastery` 已在 `peerDependencies` + `devDependencies` |
 
-**提交流程**：fork → 加上述 yml → 提 PR（一次 PR 最多 3 条）→ CI 会依次检查 `dsh.bundle`、仓库年龄、awesome-lint 与站点构建 → 合并后市场自动同步。
+**提交流程**：fork → 把 `docs/dsh-market-entry.yml` 复制成 `data/plugins/wlllyj__dsh-prompt-forge.yml` → 提 PR（一次 PR 最多 3 条）→ CI 会依次检查 `dsh.bundle`、仓库年龄、awesome-lint 与站点构建 → 合并后市场自动同步（通常一天内）。
+
+> 唯一还差的是**仓库创建满 1 天**这条硬门槛（仓库建于 2026-10-24）；时间一到即可直接提 PR。
 
 ## 开发与验证
 
